@@ -1,6 +1,6 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QMenu, QInputDialog, \
-    QMessageBox  # QInputDialog ve QMessageBox eklendi
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QMenu, QInputDialog, QMessageBox, \
+    QFileDialog  # QFileDialog eklendi
 from PyQt5.QtGui import QIcon, QFont
 from PyQt5.QtCore import Qt
 
@@ -52,17 +52,17 @@ class MainWindow(QMainWindow):
         # 1. Dosya Menüsü (Aynı kaldı)
         file_menu = menubar.addMenu("&Dosya")
 
-        word_action = QAction(QIcon('icons/word.png'), "Word Dosyası &Aç    ", self)
+        word_action = QAction(QIcon('icons/word.png'), "Word Dosyası &Aç...", self)
         word_action.setShortcut("Ctrl+W")
         word_action.setStatusTip("Bir Word belgesini açar")
         file_menu.addAction(word_action)
 
-        excel_action = QAction(QIcon('icons/excel.png'), "Excel Dosyası &Aç    ", self)
+        excel_action = QAction(QIcon('icons/excel.png'), "Excel Dosyası &Aç...", self)
         excel_action.setShortcut("Ctrl+E")
         excel_action.setStatusTip("Bir Excel çalışma sayfasını açar")
         file_menu.addAction(excel_action)
 
-        pptx_action = QAction(QIcon('icons/pptx.png'), "PPTX Dosyası &Aç    ", self)
+        pptx_action = QAction(QIcon('icons/pptx.png'), "PPTX Dosyası &Aç...", self)
         pptx_action.setShortcut("Ctrl+P")
         pptx_action.setStatusTip("Bir PowerPoint sunumunu açar")
         file_menu.addAction(pptx_action)
@@ -75,30 +75,51 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # 2. Grafik Oluştur Menüsü (Değişiklik burada!)
+        # 2. Grafik Oluştur Menüsü (Aynı kaldı)
         plot_menu = menubar.addMenu("&Grafik Oluştur")
 
-        self.chart_types = [  # chart_types'ı sınıf özelliği olarak tanımladık
-            "Çizgi Grafiği (plot)",
-            "Bar Grafiği (bar)",
-            "Histogram (hist)",
-            "Pasta Grafiği (pie)",
-            "Dağılım Grafiği (scatter)",
-            "Alan Grafiği (fill_between)",
-            "Kutu Grafiği (boxplot)",
-            "Violin Grafiği (violinplot)",
-            "Stem Grafiği (stem)",
+        self.chart_types = [
+            "Çizgi Grafiği (plot)", "Bar Grafiği (bar)", "Histogram (hist)",
+            "Pasta Grafiği (pie)", "Dağılım Grafiği (scatter)", "Alan Grafiği (fill_between)",
+            "Kutu Grafiği (boxplot)", "Violin Grafiği (violinplot)", "Stem Grafiği (stem)",
             "Hata Çubuklu Grafik (errorbar)"
         ]
 
         for grafik_adı in self.chart_types:
-            action = QAction(grafik_adı + "...", self)  # "..." ekledik, çünkü bir diyalog açılacak
+            action = QAction(grafik_adı + "...", self)
             action.setStatusTip(f"'{grafik_adı}' grafiği için adet seçimi")
-            # Her grafik türü aksiyonuna, sayı girişi isteyen bir metot bağladık
             action.triggered.connect(lambda checked, name=grafik_adı: self.get_plot_count(name))
             plot_menu.addAction(action)
 
-        # 3. Veri Seç Menüsü (Aynı kaldı)
+        # ---
+        ## 3. İndir / Yazdır Menüsü (YENİ!)
+        # ---
+        download_print_menu = menubar.addMenu("&İndir / Yazdır")
+
+        # Kaydetme Alt Menüsü
+        save_as_menu = QMenu("Farklı Kaydet", self)
+
+        # Farklı Kaydet seçenekleri
+        formats = {"PNG G&örseli": "png", "JPEG G&örseli": "jpeg", "PDF &Belgesi": "pdf", "SVG &Vektörü": "svg"}
+        for name, file_ext in formats.items():
+            save_action = QAction(QIcon(f'icons/save_{file_ext}.png'), name, self)  # İkonları varsayıyoruz
+            save_action.setStatusTip(f"Grafiği .{file_ext} formatında kaydet")
+            # Her format için farklı kaydet fonksiyonuna bağlanıyoruz
+            save_action.triggered.connect(lambda checked, fmt=file_ext: self.save_graph(fmt))
+            save_as_menu.addAction(save_action)
+
+        download_print_menu.addMenu(save_as_menu)
+
+        download_print_menu.addSeparator()  # Ayırıcı
+
+        # Yazdırma Aksiyonu
+        print_action = QAction(QIcon('icons/print.png'), "&Yazdır...", self)  # Yazdır ikonu varsayıyoruz
+        print_action.setShortcut("Ctrl+P")  # Çıktı menüsü için yeni P kısayolu
+        print_action.setStatusTip("Mevcut grafiği yazdır")
+        print_action.triggered.connect(self.print_graph)
+        download_print_menu.addAction(print_action)
+
+        # 4. Veri Seç Menüsü (Sıra değişti, aynı kaldı)
         data_menu = menubar.addMenu("&Veri Seç")
 
         x_axis_menu = QMenu("X Ekseni &Seç", self)
@@ -129,20 +150,49 @@ class MainWindow(QMainWindow):
     def get_plot_count(self, chart_type):
         num, ok = QInputDialog.getInt(self, "Grafik Adedi Girin",
                                       f"Kaç adet '{chart_type}' grafiği oluşturmak istersiniz?",
-                                      min=1, max=100, step=1)  # Min, max ve step değerleri belirledik
+                                      min=1, max=100, step=1)
 
-        if ok:  # Kullanıcı OK tuşuna bastıysa
+        if ok:
             QMessageBox.information(self, "Seçim Onayı",
                                     f"'{chart_type}' türünde {num} adet grafik oluşturulacak.")
             # Burada 'chart_type' ve 'num' değerlerini kullanarak grafik çizme fonksiyonunuzu çağırabilirsiniz.
-            # Örneğin: self.draw_graph(chart_type, num)
-        else:  # Kullanıcı İptal tuşuna bastıysa
+            # self.draw_graph(chart_type, num)
+        else:
             QMessageBox.information(self, "İptal Edildi", "Grafik oluşturma işlemi iptal edildi.")
 
-    # Grafik çizme işini yapacak varsayımsal bir metot (gerçek uygulamanızda doldurulacak)
-    # def draw_graph(self, chart_type, count):
-    #     print(f"'{chart_type}' türünde {count} adet grafik çiziliyor...")
-    #     # Burada Matplotlib veya başka bir kütüphane ile grafik çizim kodunuzu yazın.
+    # Yeni metot: Grafiği farklı formatta kaydet
+    def save_graph(self, file_format):
+        # QFileDialog.getSaveFileName() kullanıcıya dosya kaydetme penceresi açar.
+        # İlk argüman parent widget'tır (self).
+        # İkinci argüman pencere başlığıdır.
+        # Üçüncü argüman varsayılan dosya adıdır (isteğe bağlı).
+        # Dördüncü argüman dosya filtreleridir.
+        file_name, _ = QFileDialog.getSaveFileName(self, "Grafiği Kaydet", "",
+                                                   f"Grafik Dosyaları (*.{file_format});;Tüm Dosyalar (*)")
+
+        if file_name:  # Kullanıcı bir dosya adı seçip kaydet'e bastıysa
+            QMessageBox.information(self, "Kaydetme İşlemi",
+                                    f"Grafik '{file_name}' olarak kaydedilecek. (Format: .{file_format})")
+            # Burada Matplotlib figürünüzü veya QGraphicsScene içeriğini file_name yoluna kaydetmelisiniz.
+            # Örnek: my_figure.savefig(file_name)
+            # Eğer bir QGraphicsView kullanıyorsanız:
+            # from PyQt5.QtGui import QPixmap
+            # pixmap = self.view.grab() # View'daki içeriği QPixmap olarak al
+            # pixmap.save(file_name) # QPixmap'i kaydet
+        else:
+            QMessageBox.information(self, "Kaydetme İptal Edildi", "Kaydetme işlemi iptal edildi.")
+
+    # Yeni metot: Grafiği yazdır
+    def print_graph(self):
+        QMessageBox.information(self, "Yazdırma İşlemi", "Grafik yazdırma işlemi başlatılacak.")
+        # Burada grafik yazdırma diyaloğunu açacak ve grafik içeriğini yazıcıya gönderecek kodunuzu eklemelisiniz.
+        # Bu, QtPrintSupport modülü ile yapılır. Örnek:
+        # from PyQt5.QtPrintSupport import QPrintDialog, QPrinter
+        # printer = QPrinter()
+        # dialog = QPrintDialog(printer, self)
+        # if dialog.exec_() == QPrintDialog.Accepted:
+        #     # self.graphics_scene.render(printer) # QGraphicsScene içeriğini yazdır
+        #     pass
 
 
 if __name__ == "__main__":
