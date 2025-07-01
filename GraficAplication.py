@@ -5,18 +5,17 @@ import numpy as np
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QAction, QMenu, QInputDialog,
-    QMessageBox, QFileDialog, QLabel, QVBoxLayout, QWidget, QScrollArea # QScrollArea eklendi
+    QMessageBox, QFileDialog, QLabel, QVBoxLayout, QWidget, QScrollArea
 )
 from PyQt5.QtGui import QIcon, QFont, QPixmap
 from PyQt5.QtCore import Qt, QSize
 
-# Matplotlib entegrasyonu için gerekli importlar
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
 # Matplotlib varsayılan arka planını daha koyu bir temaya uyduralım
-plt.style.use('dark_background') # Matplotlib grafiklerinin arka planını koyu yap
+plt.style.use('dark_background')
 plt.rcParams.update({
     'axes.facecolor': '#282828',
     'axes.edgecolor': '#888888',
@@ -38,19 +37,18 @@ class MplWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.figure = plt.figure() # Matplotlib figürü oluştur
-        self.canvas = FigureCanvas(self.figure) # Figürü bir Qt widget'ına dönüştür
-        self.toolbar = NavigationToolbar(self.canvas, self) # Navigasyon araç çubuğu
+        self.figure = plt.figure()
+        self.canvas = FigureCanvas(self.figure)
+        self.toolbar = NavigationToolbar(self.canvas, self)
 
-        # Dikey bir layout oluştur ve canvas ile araç çubuğunu ekle
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.toolbar)
         self.layout.addWidget(self.canvas)
         self.setLayout(self.layout)
 
-        # Plot'u temizle ve ilk boş grafiği çiz
         self.figure.clear()
         self.canvas.draw_idle()
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -58,54 +56,43 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Grafik Uygulaması")
         self.setGeometry(100, 100, 1024, 768)
 
-        # Ana layout ve merkezi widget oluşturma
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
 
-        # Dosya bilgisi etiketini oluştur
         self.file_info_label = QLabel("Lütfen bir dosya seçin...", self)
         self.file_info_label.setAlignment(Qt.AlignCenter)
         self.file_info_label.setFont(QFont("Arial", 12))
         self.file_info_label.setObjectName("fileInfoLabel")
         self.file_info_label.setFixedHeight(30)
 
-        # Grafik bilgisi etiketini oluştur
         self.plot_info_label = QLabel("Henüz bir grafik oluşturulmadı.", self)
         self.plot_info_label.setAlignment(Qt.AlignCenter)
         self.plot_info_label.setFont(QFont("Arial", 12))
         self.plot_info_label.setObjectName("plotInfoLabel")
         self.plot_info_label.setFixedHeight(30)
 
-        # QLabel'leri ana layout'a ekle
         self.main_layout.addWidget(self.file_info_label)
         self.main_layout.addWidget(self.plot_info_label)
 
-        # --- QScrollArea ve İçerik Widget'ı ---
         self.scroll_area = QScrollArea(self)
-        self.scroll_area.setWidgetResizable(True) # İçindeki widget'ın boyutunu otomatik ayarla
+        self.scroll_area.setWidgetResizable(True)
 
-        # İçerik widget'ı oluştur, MplWidget'ı ve onun layout'unu bu widget'a yerleştireceğiz.
         self.scroll_content_widget = QWidget()
         self.scroll_content_layout = QVBoxLayout(self.scroll_content_widget)
 
-        # MplWidget'ı içerik widget'ının layout'una ekle
         self.matplotlib_widget = MplWidget(self)
         self.scroll_content_layout.addWidget(self.matplotlib_widget)
 
-        # QScrollArea'nın widget'ını ayarla
         self.scroll_area.setWidget(self.scroll_content_widget)
 
-        # QScrollArea'yı ana layout'a ekle
         self.main_layout.addWidget(self.scroll_area)
-        # -------------------------------------------
 
         self.create_menu()
 
-        # Uygulama genel stilini ayarla
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #202020; /* Ana pencere arka planı */
+                background-color: #202020;
             }
             QMenuBar {
                 background-color: #333;
@@ -139,24 +126,23 @@ class MainWindow(QMainWindow):
                 margin-right: 10px;
             }
             QLabel#fileInfoLabel {
-                color: #ADD8E6; /* Açık mavi */
+                color: #ADD8E6;
                 font-weight: bold;
                 padding: 5px;
-                background-color: #282828; /* Koyu gri */
+                background-color: #282828;
                 border-bottom: 1px solid #444;
             }
             QLabel#plotInfoLabel {
-                color: #A0FFA0; /* Açık yeşil */
+                color: #A0FFA0;
                 font-weight: bold;
                 padding: 5px;
-                background-color: #3A3A3A; /* Biraz daha açık koyu gri */
+                background-color: #3A3A3A;
                 border-bottom: 1px solid #555;
             }
             QScrollArea {
-                border: none; /* Kaydırma alanı çerçevesini kaldır */
-                background-color: #282828; /* İçeriğin arka planını ayarlayabiliriz */
+                border: none;
+                background-color: #282828;
             }
-            /* QScrollBar stilleri */
             QScrollBar:vertical {
                 border: 1px solid #555;
                 background: #333;
@@ -196,21 +182,19 @@ class MainWindow(QMainWindow):
     def create_menu(self):
         menubar = self.menuBar()
 
-        # 1. Dosya Menüsü
-        file_menu = menubar.addMenu("&Dosya")
-
-        # İkonları yüklerken hata kontrolü ekleyelim
         def create_action_with_icon(text, shortcut, status_tip, icon_path, connect_func):
             try:
                 action = QAction(QIcon(icon_path), text, self)
             except Exception as e:
                 print(f"Uyarı: İkon yüklenirken hata oluştu ({icon_path}): {e}")
-                action = QAction(text, self) # İkon olmadan oluştur
+                action = QAction(text, self)
             action.setShortcut(shortcut)
             action.setStatusTip(status_tip)
             action.triggered.connect(connect_func)
             return action
 
+        # Dosya Menüsü
+        file_menu = menubar.addMenu("&Dosya")
         file_menu.addAction(create_action_with_icon(
             "Word Dosyası &Aç...", "Ctrl+W", "Bir Word belgesini açar",
             'icons/word.png', lambda: self.open_file("Word Dosyaları (*.docx *.doc);;Tüm Dosyalar (*)", "word")
@@ -223,35 +207,29 @@ class MainWindow(QMainWindow):
             "PPTX Dosyası &Aç...", "Ctrl+P", "Bir PowerPoint sunumunu açar",
             'icons/pptx.png', lambda: self.open_file("PowerPoint Dosyaları (*.pptx *.ppt);;Tüm Dosyalar (*)", "pptx")
         ))
-
         file_menu.addSeparator()
-
         file_menu.addAction(create_action_with_icon(
             "Çı&kış", "Ctrl+Q", "Uygulamadan çıkar",
             'icons/exit.png', self.close
         ))
 
-        # 2. Grafik Oluştur Menüsü
+        # Grafik Oluştur Menüsü
         plot_menu = menubar.addMenu("&Grafik Oluştur")
-
         self.chart_types = [
             "Çizgi Grafiği (plot)", "Bar Grafiği (bar)", "Histogram (hist)",
             "Pasta Grafiği (pie)", "Dağılım Grafiği (scatter)", "Alan Grafiği (fill_between)",
             "Kutu Grafiği (boxplot)", "Violin Grafiği (violinplot)", "Stem Grafiği (stem)",
             "Hata Çubuklu Grafik (errorbar)"
         ]
-
         for grafik_adı in self.chart_types:
             action = QAction(grafik_adı + "...", self)
             action.setStatusTip(f"'{grafik_adı}' grafiği için adet seçimi")
             action.triggered.connect(lambda checked, name=grafik_adı: self.get_plot_count(name))
             plot_menu.addAction(action)
 
-        # 3. İndir / Yazdır Menüsü
+        # İndir / Yazdır Menüsü
         download_print_menu = menubar.addMenu("&İndir / Yazdır")
-
         save_as_menu = QMenu("Farklı Kaydet", self)
-
         formats = {"PNG G&örseli": "png", "JPEG G&örseli": "jpeg", "PDF &Belgesi": "pdf", "SVG &Vektörü": "svg"}
         for name, file_ext in formats.items():
             save_action = create_action_with_icon(
@@ -259,39 +237,40 @@ class MainWindow(QMainWindow):
                 f'icons/save_{file_ext}.png', lambda checked, fmt=file_ext: self.save_graph(fmt)
             )
             save_as_menu.addAction(save_action)
-
         download_print_menu.addMenu(save_as_menu)
-
         download_print_menu.addSeparator()
-
         download_print_menu.addAction(create_action_with_icon(
             "&Yazdır...", "Ctrl+P", "Mevcut grafiği yazdır",
             'icons/print.png', self.print_graph
         ))
 
-        # 4. Veri Seç Menüsü
-        data_menu = menubar.addMenu("&Veri Seç")
+        # --- YENİ: Rapor Menüsü ---
+        report_menu = menubar.addMenu("&Rapor")
+        report_action = create_action_with_icon(
+            "&Grafik Raporu Oluştur...", "", "Oluşturulan tüm grafikler için bir rapor oluşturur",
+            'icons/report.png', self.generate_graph_report # Yeni metot bağlantısı
+        )
+        report_menu.addAction(report_action)
+        # ---------------------------
 
+        # Veri Seç Menüsü
+        data_menu = menubar.addMenu("&Veri Seç")
         x_axis_menu = QMenu("X Ekseni &Seç", self)
         x1_action = QAction("X1 Verisi", self)
         x2_action = QAction("X2 Verisi", self)
         x_axis_menu.addAction(x1_action)
         x_axis_menu.addAction(x2_action)
         data_menu.addMenu(x_axis_menu)
-
         y_axis_menu = QMenu("Y Ekseni &Seç", self)
         y1_action = QAction("Y1 Verisi", self)
         y2_action = QAction("Y2 Verisi", self)
         y_axis_menu.addAction(y1_action)
         y_axis_menu.addAction(y2_action)
         data_menu.addMenu(y_axis_menu)
-
         data_menu.addSeparator()
-
         category_selection_action = QAction("Kategori Verisi &Seç", self)
         category_selection_action.setStatusTip("Kategori bazlı grafikler için veri sütunu seçer")
         data_menu.addAction(category_selection_action)
-
         color_by_data_action = QAction("Veriye Göre &Renklendir", self)
         color_by_data_action.setStatusTip("Dağılım grafiklerinde noktaları bir veri sütununa göre renklendirir")
         data_menu.addAction(color_by_data_action)
@@ -314,20 +293,17 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Hata", f"Grafik adedi alınırken bir hata oluştu: {e}")
             self.update_plot_info_label("", 0)
 
-
     def save_graph(self, file_format):
         if not self.matplotlib_widget.figure.axes:
             QMessageBox.warning(self, "Uyarı", "Kaydedilecek bir grafik bulunamadı. Lütfen önce bir grafik oluşturun.")
             return
 
-        # QFileDialog'ı bir try-except bloğuna alalım
         try:
             file_name, _ = QFileDialog.getSaveFileName(self, "Grafiği Kaydet", "grafik",
                                                        f"Grafik Dosyaları (*.{file_format});;Tüm Dosyalar (*)")
 
             if file_name:
-                # Matplotlib figürünü belirtilen dosya formatında kaydet
-                self.matplotlib_widget.figure.tight_layout() # Kaydetmeden önce son düzenleme
+                self.matplotlib_widget.figure.tight_layout()
                 self.matplotlib_widget.figure.savefig(file_name, format=file_format)
                 QMessageBox.information(self, "Kaydetme Başarılı",
                                         f"Grafik '{file_name}' olarak kaydedildi.")
@@ -337,10 +313,32 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Hata", f"Grafik kaydedilirken bir hata oluştu: {e}\n"
                                                f"Lütfen dosya yolunun geçerli olduğundan ve yazma izniniz olduğundan emin olun.")
 
-
     def print_graph(self):
         QMessageBox.information(self, "Yazdırma İşlemi",
                                 "Grafik yazdırma işlemi başlatılacak. (Henüz tam işlevsel değil)")
+
+    # --- YENİ: generate_graph_report Metodu ---
+    def generate_graph_report(self):
+        if not self.matplotlib_widget.figure.axes:
+            QMessageBox.warning(self, "Uyarı", "Raporlanacak bir grafik bulunamadı. Lütfen önce grafik oluşturun.")
+            return
+
+        try:
+            file_name, _ = QFileDialog.getSaveFileName(self, "Grafik Raporunu Kaydet", "grafik_raporu",
+                                                       "PDF Dosyaları (*.pdf);;Tüm Dosyalar (*)")
+
+            if file_name:
+                # Grafiği PDF olarak kaydet
+                self.matplotlib_widget.figure.tight_layout() # Raporu kaydetmeden önce son düzenleme
+                self.matplotlib_widget.figure.savefig(file_name, format='pdf')
+                QMessageBox.information(self, "Rapor Oluşturuldu",
+                                        f"Grafik raporu '{file_name}' olarak başarıyla oluşturuldu.")
+            else:
+                QMessageBox.information(self, "Rapor Oluşturma İptal Edildi", "Rapor oluşturma işlemi iptal edildi.")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Grafik raporu oluşturulurken bir hata oluştu: {e}\n"
+                                               f"Lütfen dosya yolunun geçerli olduğundan ve yazma izniniz olduğundan emin olun.")
+    # -------------------------------------------
 
     def open_file(self, file_filter, file_type_code):
         try:
@@ -348,7 +346,7 @@ class MainWindow(QMainWindow):
 
             if file_name:
                 self.update_file_info_label(file_name, file_type_code)
-                self.update_plot_info_label("", 0) # Dosya seçildiğinde grafik bilgisini temizle
+                self.update_plot_info_label("", 0)
                 QMessageBox.information(self, "Dosya Seçimi",
                                         f"Seçilen Dosya: {file_name}")
             else:
@@ -359,7 +357,6 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Hata", f"Dosya seçimi sırasında bir hata oluştu: {e}")
             self.update_file_info_label("", "")
             self.update_plot_info_label("", 0)
-
 
     def update_file_info_label(self, file_path, file_type_code):
         if file_path:
@@ -374,9 +371,8 @@ class MainWindow(QMainWindow):
                 self.file_info_label.setContentsMargins(5, 0, 0, 0)
             else:
                 self.file_info_label.setPixmap(QPixmap())
-                # Eğer ikon bulunamazsa uyarı yazısını göster
                 self.file_info_label.setText(f"  {base_name} (İkon yüklenemedi)")
-                print(f"Uyarı: '{icon_path}' ikonu bulunamadı veya yüklenemedi.") # Konsola da yazdır
+                print(f"Uyarı: '{icon_path}' ikonu bulunamadı veya yüklenemedi.")
         else:
             self.file_info_label.setPixmap(QPixmap())
             self.file_info_label.setText("Lütfen bir dosya seçin...")
@@ -396,11 +392,9 @@ class MainWindow(QMainWindow):
         self.plot_info_label.setFixedWidth(self.width())
 
     def draw_graph(self, chart_type_text, count):
-        # Önceki grafik figürünü temizle
         self.matplotlib_widget.figure.clear()
 
-        # Grafik adetine göre alt grafikler (subplots) oluşturmak için satır ve sütun hesapla
-        figure_height_per_row = 5 # Her satır grafik için yaklaşık yükseklik (inç cinsinden)
+        figure_height_per_row = 5
 
         rows = 1
         cols = 1
@@ -418,9 +412,6 @@ class MainWindow(QMainWindow):
             cols = 3
             rows = (count + cols - 1) // cols
 
-        # Figürün genişliği ve yüksekliğini inç cinsinden ayarla
-        # Matplotlib'in dpi'ı (dots per inch) genellikle 100'dür.
-        # Bu, boyutları piksel cinsine çevirmek için kullanılır.
         self.matplotlib_widget.figure.set_size_inches(cols * 4, rows * figure_height_per_row)
 
         chart_func_name = chart_type_text.split('(')[-1][:-1] if '(' in chart_type_text else None
@@ -434,11 +425,9 @@ class MainWindow(QMainWindow):
                 ax = self.matplotlib_widget.figure.add_subplot(rows, cols, i + 1)
                 ax.set_title(f"{chart_type_text.split('(')[0].strip()} {i + 1}")
 
-                # Örnek veri üretimi
                 x = np.linspace(0, 10, 100)
                 y = np.sin(x + i * 0.5) + random.uniform(-0.5, 0.5)
 
-                # Grafik türüne göre çizim
                 if chart_func_name == "plot":
                     ax.plot(x, y, label=f'Series {i + 1}')
                     ax.set_xlabel("X Ekseni")
@@ -509,20 +498,14 @@ class MainWindow(QMainWindow):
                     ax.set_title("Bilinmeyen Grafik Türü")
 
             except Exception as e:
-                # Bir grafiğin çizimi sırasında hata oluşursa, bunu kullanıcıya bildir
                 print(f"Hata: {i+1}. grafiği çizerken bir sorun oluştu: {e}")
                 ax.text(0.5, 0.5, f"Grafik çiziminde hata:\n{e}",
                         horizontalalignment='center', verticalalignment='center',
                         transform=ax.transAxes, color='red', fontsize=12)
                 ax.set_title(f"Hata Oluştu ({chart_type_text.split('(')[0].strip()} {i + 1})")
 
-
-        # Grafiklerin düzenini optimize et
         self.matplotlib_widget.figure.tight_layout()
-        # Kaydırma alanının içeriğini güncellemek için canvas'ı yeniden çiz
         self.matplotlib_widget.canvas.draw_idle()
-        # Kaydırma alanının widget'ının boyutunu içeriğine göre yeniden ayarla
-        # Bu, kaydırma çubuklarının doğru görünmesini sağlar.
         self.scroll_content_widget.setMinimumSize(
             int(self.matplotlib_widget.figure.get_size_inches()[0] * self.matplotlib_widget.figure.dpi),
             int(self.matplotlib_widget.figure.get_size_inches()[1] * self.matplotlib_widget.figure.dpi)
@@ -530,14 +513,12 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
-    # Uygulamanın düzgün bir şekilde başlatıldığından emin olmak için try-except bloğu
     try:
         app = QApplication(sys.argv)
         window = MainWindow()
         window.show()
         sys.exit(app.exec_())
     except Exception as e:
-        # Uygulama başlatılamazsa hata mesajı göster
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
         msg.setText("Uygulama başlatılırken kritik bir hata oluştu.")
