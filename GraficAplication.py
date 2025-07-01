@@ -1,6 +1,7 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QMenu, QGraphicsView, QGraphicsScene
-from PyQt5.QtGui import QIcon, QFont  # QFont'u ekledik
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QMenu, QInputDialog, \
+    QMessageBox  # QInputDialog ve QMessageBox eklendi
+from PyQt5.QtGui import QIcon, QFont
 from PyQt5.QtCore import Qt
 
 
@@ -8,35 +9,34 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Grafik Uygulaması")
-        self.setGeometry(100, 100, 1024, 768)  # Daha geniş bir başlangıç boyutu verdik
+        self.setGeometry(100, 100, 1024, 768)
         self.create_menu()
 
-        # Uygulamanın genel stilini iyileştirmek için isteğe bağlı stil
         self.setStyleSheet("""
             QMenuBar {
-                background-color: #333; /* Koyu arka plan */
-                color: #FFF; /* Beyaz yazı rengi */
-                font-size: 14px; /* Menü çubuğu yazıları biraz daha büyük */
-                padding: 5px 0px; /* Üst ve altta boşluk */
+                background-color: #333;
+                color: #FFF;
+                font-size: 14px;
+                padding: 5px 0px;
             }
             QMenuBar::item {
-                padding: 8px 15px; /* Menü öğeleri arasında daha fazla boşluk */
+                padding: 8px 15px;
                 background-color: transparent;
             }
             QMenuBar::item:selected {
-                background-color: #555; /* Seçili öğe arka plan rengi */
+                background-color: #555;
             }
             QMenu {
-                background-color: #444; /* Açılır menü arka plan rengi */
+                background-color: #444;
                 color: #FFF;
-                border: 1px solid #666; /* Kenarlık */
+                border: 1px solid #666;
             }
             QMenu::item {
-                padding: 8px 25px; /* Alt menü öğeleri için daha fazla dolgu */
+                padding: 8px 25px;
                 background-color: transparent;
             }
             QMenu::item:selected {
-                background-color: #666; /* Açılır menüde seçili öğe rengi */
+                background-color: #666;
             }
             QMenu::separator {
                 height: 1px;
@@ -48,26 +48,21 @@ class MainWindow(QMainWindow):
 
     def create_menu(self):
         menubar = self.menuBar()
-        # macOS'te doğal menü çubuğunu kullanmak için:
-        # menubar.setNativeMenuBar(True)
 
-        # 1. Dosya Menüsü
+        # 1. Dosya Menüsü (Aynı kaldı)
         file_menu = menubar.addMenu("&Dosya")
 
-        # Varsayımsal ikonlar: Gerçek ikon dosyalarını ('icons/word.png' gibi) oluşturmanız veya path'lerini ayarlamanız gerekir.
-        # İkonlarınız yoksa QIcon() kısmını silebilirsiniz.
-
-        word_action = QAction(QIcon('icons/word.png'), "Word Dosyası &Aç...", self)
+        word_action = QAction(QIcon('icons/word.png'), "Word Dosyası &Aç    ", self)
         word_action.setShortcut("Ctrl+W")
         word_action.setStatusTip("Bir Word belgesini açar")
         file_menu.addAction(word_action)
 
-        excel_action = QAction(QIcon('icons/excel.png'), "Excel Dosyası &Aç...", self)
+        excel_action = QAction(QIcon('icons/excel.png'), "Excel Dosyası &Aç    ", self)
         excel_action.setShortcut("Ctrl+E")
         excel_action.setStatusTip("Bir Excel çalışma sayfasını açar")
         file_menu.addAction(excel_action)
 
-        pptx_action = QAction(QIcon('icons/pptx.png'), "PPTX Dosyası &Aç...", self)
+        pptx_action = QAction(QIcon('icons/pptx.png'), "PPTX Dosyası &Aç    ", self)
         pptx_action.setShortcut("Ctrl+P")
         pptx_action.setStatusTip("Bir PowerPoint sunumunu açar")
         file_menu.addAction(pptx_action)
@@ -80,10 +75,10 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # 2. Grafik Oluştur Menüsü
+        # 2. Grafik Oluştur Menüsü (Değişiklik burada!)
         plot_menu = menubar.addMenu("&Grafik Oluştur")
 
-        chart_types = [
+        self.chart_types = [  # chart_types'ı sınıf özelliği olarak tanımladık
             "Çizgi Grafiği (plot)",
             "Bar Grafiği (bar)",
             "Histogram (hist)",
@@ -96,13 +91,14 @@ class MainWindow(QMainWindow):
             "Hata Çubuklu Grafik (errorbar)"
         ]
 
-        for grafik in chart_types:
-            action = QAction(grafik, self)
-            action.setStatusTip(f"{grafik} oluşturur")
-            # action.triggered.connect(lambda checked, g=grafik: self.create_plot(g))
+        for grafik_adı in self.chart_types:
+            action = QAction(grafik_adı + "...", self)  # "..." ekledik, çünkü bir diyalog açılacak
+            action.setStatusTip(f"'{grafik_adı}' grafiği için adet seçimi")
+            # Her grafik türü aksiyonuna, sayı girişi isteyen bir metot bağladık
+            action.triggered.connect(lambda checked, name=grafik_adı: self.get_plot_count(name))
             plot_menu.addAction(action)
 
-        # 3. Veri Seç Menüsü
+        # 3. Veri Seç Menüsü (Aynı kaldı)
         data_menu = menubar.addMenu("&Veri Seç")
 
         x_axis_menu = QMenu("X Ekseni &Seç", self)
@@ -128,6 +124,25 @@ class MainWindow(QMainWindow):
         color_by_data_action = QAction("Veriye Göre &Renklendir", self)
         color_by_data_action.setStatusTip("Dağılım grafiklerinde noktaları bir veri sütununa göre renklendirir")
         data_menu.addAction(color_by_data_action)
+
+    # Yeni metot: Kullanıcıdan grafik adedi al
+    def get_plot_count(self, chart_type):
+        num, ok = QInputDialog.getInt(self, "Grafik Adedi Girin",
+                                      f"Kaç adet '{chart_type}' grafiği oluşturmak istersiniz?",
+                                      min=1, max=100, step=1)  # Min, max ve step değerleri belirledik
+
+        if ok:  # Kullanıcı OK tuşuna bastıysa
+            QMessageBox.information(self, "Seçim Onayı",
+                                    f"'{chart_type}' türünde {num} adet grafik oluşturulacak.")
+            # Burada 'chart_type' ve 'num' değerlerini kullanarak grafik çizme fonksiyonunuzu çağırabilirsiniz.
+            # Örneğin: self.draw_graph(chart_type, num)
+        else:  # Kullanıcı İptal tuşuna bastıysa
+            QMessageBox.information(self, "İptal Edildi", "Grafik oluşturma işlemi iptal edildi.")
+
+    # Grafik çizme işini yapacak varsayımsal bir metot (gerçek uygulamanızda doldurulacak)
+    # def draw_graph(self, chart_type, count):
+    #     print(f"'{chart_type}' türünde {count} adet grafik çiziliyor...")
+    #     # Burada Matplotlib veya başka bir kütüphane ile grafik çizim kodunuzu yazın.
 
 
 if __name__ == "__main__":
