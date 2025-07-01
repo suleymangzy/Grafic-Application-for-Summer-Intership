@@ -14,6 +14,19 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
+# PDF oluşturma için FPDF2 kütüphanesi
+from fpdf import FPDF # fpdf2 paketi, import FPDF olarak kullanılır.
+
+# Yapay Zeka Entegrasyonu için (örnek: Google Gemini)
+import google.generativeai as genai
+
+# API anahtarınızı buraya koyun veya güvenli bir şekilde çevre değişkenlerinden yükleyin
+# Örnek: os.getenv("GEMINI_API_KEY")
+# Lütfen API anahtarınızı GitHub gibi yerlere yüklemeyin!
+API_KEY = "YOUR_GEMINI_API_KEY_HERE" # BURAYI KENDİ API ANAHTARINIZLA DEĞİŞTİRİN!
+
+
+# Matplotlib varsayılan arka planını daha koyu bir temaya uyduralım
 plt.style.use('dark_background')
 plt.rcParams.update({
     'axes.facecolor': '#282828',
@@ -50,6 +63,24 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Grafik Uygulaması")
         self.setGeometry(100, 100, 1024, 768)
+
+        # Matplotlib grafiklerine ait verileri tutacak liste
+        # Her bir eleman: {'type': 'plot', 'data_x': [...], 'data_y': [...], 'title': '...'}
+        self.current_plot_data = []
+
+        # Yapay zeka modelini başlat (API anahtarı varsa)
+        if API_KEY and API_KEY != "YOUR_GEMINI_API_KEY_HERE":
+            try:
+                genai.configure(api_key=API_KEY)
+                self.ai_model = genai.GenerativeModel('gemini-pro') # Kullanacağınız model
+                print("Gemini API başarıyla yapılandırıldı.")
+            except Exception as e:
+                self.ai_model = None
+                QMessageBox.warning(self, "API Hatası", f"Gemini API yapılandırılamadı: {e}\nRaporlama için yapay zeka yorumu kullanılamayacak.")
+        else:
+            self.ai_model = None
+            QMessageBox.warning(self, "API Uyarısı", "Gemini API anahtarı ayarlanmadı. Yapay zeka yorumu oluşturulamayacak.")
+
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -239,7 +270,7 @@ class MainWindow(QMainWindow):
             'icons/print.png', self.print_graph
         ))
 
-        # --- YER DEĞİŞİKLİĞİ: Veri Seç Menüsü artık burada ---
+        # 4. Veri Seç Menüsü
         data_menu = menubar.addMenu("&Veri Seç")
         x_axis_menu = QMenu("X Ekseni &Seç", self)
         x1_action = QAction("X1 Verisi", self)
@@ -260,16 +291,14 @@ class MainWindow(QMainWindow):
         color_by_data_action = QAction("Veriye Göre &Renklendir", self)
         color_by_data_action.setStatusTip("Dağılım grafiklerinde noktaları bir veri sütununa göre renklendirir")
         data_menu.addAction(color_by_data_action)
-        # ----------------------------------------------------
 
-        # --- Rapor Menüsü (şimdi Veri Seç'ten sonra) ---
+        # 5. Rapor Menüsü (Yapay Zeka Entegrasyonu)
         report_menu = menubar.addMenu("&Rapor")
         report_action = create_action_with_icon(
-            "&Grafik Raporu Oluştur...", "", "Oluşturulan tüm grafikler için bir rapor oluşturur",
-            'icons/report.png', self.generate_graph_report
+            "&Yapay Zeka Destekli Rapor Oluştur...", "", "Oluşturulan grafiklere ve verilere dayalı bir rapor oluşturur",
+            'icons/report.png', self.generate_ai_report # Yeni metot bağlantısı
         )
         report_menu.addAction(report_action)
-        # -----------------------------------------------
 
     def get_plot_count(self, chart_type):
         try:
@@ -312,26 +341,6 @@ class MainWindow(QMainWindow):
     def print_graph(self):
         QMessageBox.information(self, "Yazdırma İşlemi",
                                 "Grafik yazdırma işlemi başlatılacak. (Henüz tam işlevsel değil)")
-
-    def generate_graph_report(self):
-        if not self.matplotlib_widget.figure.axes:
-            QMessageBox.warning(self, "Uyarı", "Raporlanacak bir grafik bulunamadı. Lütfen önce grafik oluşturun.")
-            return
-
-        try:
-            file_name, _ = QFileDialog.getSaveFileName(self, "Grafik Raporunu Kaydet", "grafik_raporu",
-                                                       "PDF Dosyaları (*.pdf);;Tüm Dosyalar (*)")
-
-            if file_name:
-                self.matplotlib_widget.figure.tight_layout()
-                self.matplotlib_widget.figure.savefig(file_name, format='pdf')
-                QMessageBox.information(self, "Rapor Oluşturuldu",
-                                        f"Grafik raporu '{file_name}' olarak başarıyla oluşturuldu.")
-            else:
-                QMessageBox.information(self, "Rapor Oluşturma İptal Edildi", "Rapor oluşturma işlemi iptal edildi.")
-        except Exception as e:
-            QMessageBox.critical(self, "Hata", f"Grafik raporu oluşturulurken bir hata oluştu: {e}\n"
-                                               f"Lütfen dosya yolunun geçerli olduğundan ve yazma izniniz olduğundan emin olun.")
 
     def open_file(self, file_filter, file_type_code):
         try:
@@ -386,6 +395,7 @@ class MainWindow(QMainWindow):
 
     def draw_graph(self, chart_type_text, count):
         self.matplotlib_widget.figure.clear()
+        self.current_plot_data = [] # Her yeni çizimde mevcut verileri temizle
 
         figure_height_per_row = 5
 
@@ -416,7 +426,10 @@ class MainWindow(QMainWindow):
         for i in range(count):
             try:
                 ax = self.matplotlib_widget.figure.add_subplot(rows, cols, i + 1)
-                ax.set_title(f"{chart_type_text.split('(')[0].strip()} {i + 1}")
+                title = f"{chart_type_text.split('(')[0].strip()} {i + 1}"
+                ax.set_title(title)
+
+                plot_info = {'type': chart_func_name, 'title': title}
 
                 x = np.linspace(0, 10, 100)
                 y = np.sin(x + i * 0.5) + random.uniform(-0.5, 0.5)
@@ -426,6 +439,8 @@ class MainWindow(QMainWindow):
                     ax.set_xlabel("X Ekseni")
                     ax.set_ylabel("Y Ekseni")
                     ax.legend()
+                    plot_info['data_x'] = x.tolist() # Listeye çevir
+                    plot_info['data_y'] = y.tolist() # Listeye çevir
                 elif chart_func_name == "bar":
                     categories = [f'Kategori {k + 1}' for k in range(5)]
                     values = np.random.randint(5, 20, 5)
@@ -433,24 +448,34 @@ class MainWindow(QMainWindow):
                     ax.bar(categories, values, color=colors)
                     ax.set_xlabel("Kategoriler")
                     ax.set_ylabel("Değerler")
+                    plot_info['categories'] = categories
+                    plot_info['values'] = values.tolist()
                 elif chart_func_name == "hist":
                     data = np.random.randn(1000)
                     ax.hist(data, bins=30, color='skyblue', edgecolor='black')
                     ax.set_xlabel("Değer")
                     ax.set_ylabel("Frekans")
+                    plot_info['data'] = data.tolist()
+                    plot_info['bins'] = 30 # Sabit bir değer olarak belirtilebilir
                 elif chart_func_name == "pie":
                     sizes = [random.randint(10, 30) for _ in range(4)]
                     labels = [f'Dilim {k + 1}' for k in range(4)]
                     ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
                     ax.axis('equal')
+                    plot_info['sizes'] = sizes
+                    plot_info['labels'] = labels
                 elif chart_func_name == "scatter":
                     x_scatter = np.random.rand(50) * 10
                     y_scatter = np.random.rand(50) * 10
-                    colors = np.random.rand(50)
+                    colors = np.random.rand(50) # Renkleri doğrudan dizi olarak tutabiliriz
                     sizes = np.random.rand(50) * 200 + 20
                     ax.scatter(x_scatter, y_scatter, c=colors, s=sizes, alpha=0.7, cmap='viridis')
                     ax.set_xlabel("X Verisi")
                     ax.set_ylabel("Y Verisi")
+                    plot_info['data_x'] = x_scatter.tolist()
+                    plot_info['data_y'] = y_scatter.tolist()
+                    plot_info['colors'] = colors.tolist()
+                    plot_info['sizes'] = sizes.tolist()
                 elif chart_func_name == "fill_between":
                     x_area = np.linspace(0, 10, 100)
                     y1_area = np.sin(x_area + i * 0.5) + 2
@@ -461,23 +486,34 @@ class MainWindow(QMainWindow):
                     ax.set_xlabel("X Ekseni")
                     ax.set_ylabel("Değer")
                     ax.legend()
+                    plot_info['data_x'] = x_area.tolist()
+                    plot_info['data_y1'] = y1_area.tolist()
+                    plot_info['data_y2'] = y2_area.tolist()
                 elif chart_func_name == "boxplot":
                     data = [np.random.normal(0, std, 100) for std in range(1, 4)]
                     ax.boxplot(data, patch_artist=True)
-                    ax.set_xticklabels([f'Grup {k + 1}' for k in range(len(data))])
+                    labels = [f'Grup {k + 1}' for k in range(len(data))]
+                    ax.set_xticklabels(labels)
                     ax.set_ylabel("Değer")
+                    plot_info['data_groups'] = [d.tolist() for d in data] # Grupları liste listesi olarak sakla
+                    plot_info['labels'] = labels
                 elif chart_func_name == "violinplot":
                     data = [np.random.normal(0, std, 100) for std in range(1, 4)]
                     ax.violinplot(data, showmeans=True, showmedians=True)
+                    labels = [f'Grup {k + 1}' for k in range(len(data))]
                     ax.set_xticks(np.arange(1, len(data) + 1))
-                    ax.set_xticklabels([f'Grup {k + 1}' for k in range(len(data))])
+                    ax.set_xticklabels(labels)
                     ax.set_ylabel("Değer")
+                    plot_info['data_groups'] = [d.tolist() for d in data]
+                    plot_info['labels'] = labels
                 elif chart_func_name == "stem":
                     x_stem = np.arange(10)
                     y_stem = np.random.randint(1, 10, 10)
                     ax.stem(x_stem, y_stem)
                     ax.set_xlabel("Dizin")
                     ax.set_ylabel("Değer")
+                    plot_info['data_x'] = x_stem.tolist()
+                    plot_info['data_y'] = y_stem.tolist()
                 elif chart_func_name == "errorbar":
                     x_err = np.linspace(0, 10, 10)
                     y_err = np.sin(x_err)
@@ -485,10 +521,16 @@ class MainWindow(QMainWindow):
                     ax.errorbar(x_err, y_err, yerr=y_error, fmt='-o')
                     ax.set_xlabel("X Ekseni")
                     ax.set_ylabel("Y Ekseni")
+                    plot_info['data_x'] = x_err.tolist()
+                    plot_info['data_y'] = y_err.tolist()
+                    plot_info['y_error'] = y_error.tolist()
                 else:
                     ax.text(0.5, 0.5, f"'{chart_type_text}' için çizim kodu yok.",
                             horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
                     ax.set_title("Bilinmeyen Grafik Türü")
+                    plot_info = {'type': 'unknown', 'title': title, 'error': f"Çizim kodu yok: {chart_type_text}"}
+
+                self.current_plot_data.append(plot_info) # Veriyi listeye ekle
 
             except Exception as e:
                 print(f"Hata: {i+1}. grafiği çizerken bir sorun oluştu: {e}")
@@ -496,6 +538,8 @@ class MainWindow(QMainWindow):
                         horizontalalignment='center', verticalalignment='center',
                         transform=ax.transAxes, color='red', fontsize=12)
                 ax.set_title(f"Hata Oluştu ({chart_type_text.split('(')[0].strip()} {i + 1})")
+                self.current_plot_data.append({'type': chart_func_name, 'title': title, 'error': str(e)})
+
 
         self.matplotlib_widget.figure.tight_layout()
         self.matplotlib_widget.canvas.draw_idle()
@@ -503,6 +547,136 @@ class MainWindow(QMainWindow):
             int(self.matplotlib_widget.figure.get_size_inches()[0] * self.matplotlib_widget.figure.dpi),
             int(self.matplotlib_widget.figure.get_size_inches()[1] * self.matplotlib_widget.figure.dpi)
         )
+
+    def generate_ai_report_content(self):
+        """
+        Yapay zeka modelinden grafik verilerine dayalı yorumlama alır.
+        """
+        if not self.ai_model:
+            return "Yapay zeka modeli kullanıma hazır değil. Lütfen API anahtarınızı kontrol edin."
+
+        if not self.current_plot_data:
+            return "Raporlanacak grafik verisi bulunamadı."
+
+        prompt_parts = []
+        prompt_parts.append("Aşağıdaki grafik verilerini analiz et ve önemli eğilimleri, içgörüleri ve gözlemleri içeren kapsamlı bir rapor oluştur. Her grafiğin tipini ve başlığını belirt, ardından anahtar sayısal değerleri (eğer uygulanabiliyorsa) ve yorumunu sun. Bulgularını açık ve özlü bir dille özetle. Rapor başlığı 'Grafik Analiz Raporu' olsun.\n\n")
+
+        for i, plot_info in enumerate(self.current_plot_data):
+            prompt_parts.append(f"--- Grafik {i+1} ---\n")
+            prompt_parts.append(f"Türü: {plot_info.get('type', 'Bilinmiyor')}\n")
+            prompt_parts.append(f"Başlık: {plot_info.get('title', 'Başlıksız')}\n")
+
+            if 'error' in plot_info:
+                prompt_parts.append(f"Hata: Bu grafik çizilirken bir sorun oluştu: {plot_info['error']}\n")
+            else:
+                # Sayısal verileri promta ekle
+                if plot_info['type'] == 'plot':
+                    prompt_parts.append(f"X Verisi (ilk 5): {plot_info['data_x'][:5]}\n")
+                    prompt_parts.append(f"Y Verisi (ilk 5): {plot_info['data_y'][:5]}\n")
+                    prompt_parts.append(f"X Min/Max: {min(plot_info['data_x']):.2f}/{max(plot_info['data_x']):.2f}\n")
+                    prompt_parts.append(f"Y Min/Max: {min(plot_info['data_y']):.2f}/{max(plot_info['data_y']):.2f}\n")
+                    prompt_parts.append(f"Y Ort./Std: {np.mean(plot_info['data_y']):.2f}/{np.std(plot_info['data_y']):.2f}\n")
+                elif plot_info['type'] == 'bar':
+                    prompt_parts.append(f"Kategoriler: {plot_info['categories']}\n")
+                    prompt_parts.append(f"Değerler: {plot_info['values']}\n")
+                    prompt_parts.append(f"Ortalama Değer: {np.mean(plot_info['values']):.2f}\n")
+                    prompt_parts.append(f"En Yüksek Değer: {max(plot_info['values'])}, En Düşük Değer: {min(plot_info['values'])}\n")
+                elif plot_info['type'] == 'hist':
+                    prompt_parts.append(f"Veri İstatistikleri: Min={min(plot_info['data']):.2f}, Max={max(plot_info['data']):.2f}, Ort={np.mean(plot_info['data']):.2f}, Std={np.std(plot_info['data']):.2f}\n")
+                    prompt_parts.append(f"Bölme Sayısı: {plot_info.get('bins', 'Bilinmiyor')}\n")
+                elif plot_info['type'] == 'pie':
+                    prompt_parts.append(f"Dilim Etiketleri: {plot_info['labels']}\n")
+                    prompt_parts.append(f"Dilim Boyutları: {plot_info['sizes']}\n")
+                    prompt_parts.append(f"Toplam Boyut: {sum(plot_info['sizes'])}\n")
+                elif plot_info['type'] == 'scatter':
+                    prompt_parts.append(f"X Verisi (ilk 5): {plot_info['data_x'][:5]}\n")
+                    prompt_parts.append(f"Y Verisi (ilk 5): {plot_info['data_y'][:5]}\n")
+                    prompt_parts.append(f"X Min/Max: {min(plot_info['data_x']):.2f}/{max(plot_info['data_x']):.2f}\n")
+                    prompt_parts.append(f"Y Min/Max: {min(plot_info['data_y']):.2f}/{max(plot_info['data_y']):.2f}\n")
+                elif plot_info['type'] in ['boxplot', 'violinplot']:
+                    prompt_parts.append(f"Grup Sayısı: {len(plot_info['data_groups'])}\n")
+                    for k, group in enumerate(plot_info['data_groups']):
+                        prompt_parts.append(f"  Grup {k+1} ({plot_info['labels'][k]}): Ort={np.mean(group):.2f}, Medyan={np.median(group):.2f}, Min={min(group):.2f}, Max={max(group):.2f}\n")
+                # Diğer grafik türleri için de benzer şekilde veri ekleyebilirsiniz
+
+            prompt_parts.append("\n") # Her grafik arasında boşluk
+
+        full_prompt = "".join(prompt_parts)
+        print("AI'a gönderilecek prompt:\n", full_prompt) # Hata ayıklama için
+
+        try:
+            response = self.ai_model.generate_content(full_prompt)
+            return response.text
+        except Exception as e:
+            return f"Yapay zeka yorumu alınırken bir hata oluştu: {e}\n" \
+                   "Lütfen API anahtarınızın doğru olduğundan ve internet bağlantınızın olduğundan emin olun."
+
+    def generate_ai_report(self):
+        file_name, _ = QFileDialog.getSaveFileName(self, "AI Destekli Grafik Raporunu Kaydet", "ai_grafik_raporu",
+                                                   "PDF Dosyaları (*.pdf);;Tüm Dosyalar (*)")
+
+        if not file_name:
+            QMessageBox.information(self, "Rapor Oluşturma İptal Edildi", "Rapor oluşturma işlemi iptal edildi.")
+            return
+
+        QMessageBox.information(self, "Rapor Oluşturuluyor", "Yapay zeka yorumu alınıyor ve rapor oluşturuluyor. Bu biraz zaman alabilir...")
+
+        # Yapay zeka yorumunu al
+        ai_commentary = self.generate_ai_report_content()
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, "Grafik Analiz Raporu", 0, 1, "C")
+        pdf.ln(10)
+
+        # Yapay zeka yorumunu ekle
+        pdf.set_font("Arial", "", 10)
+        # Türkçe karakter sorununu çözmek için font ekle
+        # Ttf dosyasını indirmeli ve kodun çalıştığı yere koymalısınız.
+        # Örneğin: pdf.add_font('DejaVuSans', '', 'DejaVuSansCondensed.ttf', uni=True)
+        # veya farklı bir Türkçe destekli font
+        # Şimdilik standart fontla devam edelim, Türkçe karakterler ???? olabilir.
+        try:
+            pdf.write(5, ai_commentary.encode('latin-1', 'replace').decode('latin-1'))
+        except Exception as e:
+            pdf.write(5, "Yapay zeka yorumu metin işlenirken hata oluştu. Türkçe karakterler sorun çıkarabilir. Detay: " + str(e))
+            print(f"PDF'e metin yazılırken hata: {e}")
+
+        pdf.ln(10)
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Oluşturulan Grafikler", 0, 1, "C")
+        pdf.ln(5)
+
+        # Grafiğin görselini PDF'e eklemek için geçici bir dosya oluştur
+        temp_image_path = "temp_chart.png"
+        try:
+            self.matplotlib_widget.figure.tight_layout()
+            self.matplotlib_widget.figure.savefig(temp_image_path, format='png', dpi=300)
+
+            # Grafiği PDF'e ekle
+            # Genişliği 180mm olarak ayarla, yüksekliği otomatik ayarlasın
+            # x ve y koordinatlarını manuel ayarlayarak ortalayabiliriz
+            # A4 genişliği ~210mm. 180mm genişlik bırakırsak, sol ve sağdan 15mm boşluk kalır.
+            # (210 - 180) / 2 = 15mm
+            pdf.image(temp_image_path, x=15, w=180)
+            pdf.ln(5) # Grafik sonrası boşluk
+        except Exception as e:
+            QMessageBox.warning(self, "Rapor Hatası", f"Grafik görseli PDF'e eklenemedi: {e}")
+            pdf.set_font("Arial", "", 10)
+            pdf.write(5, f"Grafik görseli eklenirken hata oluştu: {e}")
+        finally:
+            # Geçici dosyayı sil
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+
+        try:
+            pdf.output(file_name)
+            QMessageBox.information(self, "Rapor Oluşturuldu",
+                                    f"Yapay zeka destekli grafik raporu '{file_name}' olarak başarıyla oluşturuldu.")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"PDF raporu kaydedilirken bir hata oluştu: {e}\n"
+                                               f"Lütfen dosya yolunun geçerli olduğundan ve yazma izniniz olduğundan emin olun.")
 
 
 if __name__ == "__main__":
@@ -515,7 +689,7 @@ if __name__ == "__main__":
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
         msg.setText("Uygulama başlatılırken kritik bir hata oluştu.")
-        msg.setInformativeText(f"Lütfen gerekli kütüphanelerin (PyQt5, Matplotlib, NumPy) kurulu olduğundan ve ikon dosyalarının 'icons/' klasöründe bulunduğundan emin olun.\nHata: {e}")
+        msg.setInformativeText(f"Lütfen gerekli kütüphanelerin (PyQt5, Matplotlib, NumPy, FPDF2, google-generativeai) kurulu olduğundan ve ikon dosyalarının 'icons/' klasöründe bulunduğundan emin olun.\nHata: {e}")
         msg.setWindowTitle("Kritik Hata")
         msg.exec_()
         sys.exit(1)
