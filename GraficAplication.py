@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
-# Matplotlib varsayılan arka planını daha koyu bir temaya uyduralım
 plt.style.use('dark_background')
 plt.rcParams.update({
     'axes.facecolor': '#282828',
@@ -30,10 +29,6 @@ plt.rcParams.update({
 
 
 class MplWidget(QWidget):
-    """
-    Matplotlib grafiğini içinde barındıracak özel bir QWidget.
-    Bu widget bir kaydırma alanının içine yerleştirilecek.
-    """
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -193,7 +188,7 @@ class MainWindow(QMainWindow):
             action.triggered.connect(connect_func)
             return action
 
-        # Dosya Menüsü
+        # 1. Dosya Menüsü
         file_menu = menubar.addMenu("&Dosya")
         file_menu.addAction(create_action_with_icon(
             "Word Dosyası &Aç...", "Ctrl+W", "Bir Word belgesini açar",
@@ -213,7 +208,7 @@ class MainWindow(QMainWindow):
             'icons/exit.png', self.close
         ))
 
-        # Grafik Oluştur Menüsü
+        # 2. Grafik Oluştur Menüsü
         plot_menu = menubar.addMenu("&Grafik Oluştur")
         self.chart_types = [
             "Çizgi Grafiği (plot)", "Bar Grafiği (bar)", "Histogram (hist)",
@@ -227,7 +222,7 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked, name=grafik_adı: self.get_plot_count(name))
             plot_menu.addAction(action)
 
-        # İndir / Yazdır Menüsü
+        # 3. İndir / Yazdır Menüsü
         download_print_menu = menubar.addMenu("&İndir / Yazdır")
         save_as_menu = QMenu("Farklı Kaydet", self)
         formats = {"PNG G&örseli": "png", "JPEG G&örseli": "jpeg", "PDF &Belgesi": "pdf", "SVG &Vektörü": "svg"}
@@ -244,16 +239,7 @@ class MainWindow(QMainWindow):
             'icons/print.png', self.print_graph
         ))
 
-        # --- YENİ: Rapor Menüsü ---
-        report_menu = menubar.addMenu("&Rapor")
-        report_action = create_action_with_icon(
-            "&Grafik Raporu Oluştur...", "", "Oluşturulan tüm grafikler için bir rapor oluşturur",
-            'icons/report.png', self.generate_graph_report # Yeni metot bağlantısı
-        )
-        report_menu.addAction(report_action)
-        # ---------------------------
-
-        # Veri Seç Menüsü
+        # --- YER DEĞİŞİKLİĞİ: Veri Seç Menüsü artık burada ---
         data_menu = menubar.addMenu("&Veri Seç")
         x_axis_menu = QMenu("X Ekseni &Seç", self)
         x1_action = QAction("X1 Verisi", self)
@@ -274,6 +260,16 @@ class MainWindow(QMainWindow):
         color_by_data_action = QAction("Veriye Göre &Renklendir", self)
         color_by_data_action.setStatusTip("Dağılım grafiklerinde noktaları bir veri sütununa göre renklendirir")
         data_menu.addAction(color_by_data_action)
+        # ----------------------------------------------------
+
+        # --- Rapor Menüsü (şimdi Veri Seç'ten sonra) ---
+        report_menu = menubar.addMenu("&Rapor")
+        report_action = create_action_with_icon(
+            "&Grafik Raporu Oluştur...", "", "Oluşturulan tüm grafikler için bir rapor oluşturur",
+            'icons/report.png', self.generate_graph_report
+        )
+        report_menu.addAction(report_action)
+        # -----------------------------------------------
 
     def get_plot_count(self, chart_type):
         try:
@@ -317,7 +313,6 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Yazdırma İşlemi",
                                 "Grafik yazdırma işlemi başlatılacak. (Henüz tam işlevsel değil)")
 
-    # --- YENİ: generate_graph_report Metodu ---
     def generate_graph_report(self):
         if not self.matplotlib_widget.figure.axes:
             QMessageBox.warning(self, "Uyarı", "Raporlanacak bir grafik bulunamadı. Lütfen önce grafik oluşturun.")
@@ -328,8 +323,7 @@ class MainWindow(QMainWindow):
                                                        "PDF Dosyaları (*.pdf);;Tüm Dosyalar (*)")
 
             if file_name:
-                # Grafiği PDF olarak kaydet
-                self.matplotlib_widget.figure.tight_layout() # Raporu kaydetmeden önce son düzenleme
+                self.matplotlib_widget.figure.tight_layout()
                 self.matplotlib_widget.figure.savefig(file_name, format='pdf')
                 QMessageBox.information(self, "Rapor Oluşturuldu",
                                         f"Grafik raporu '{file_name}' olarak başarıyla oluşturuldu.")
@@ -338,7 +332,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Hata", f"Grafik raporu oluşturulurken bir hata oluştu: {e}\n"
                                                f"Lütfen dosya yolunun geçerli olduğundan ve yazma izniniz olduğundan emin olun.")
-    # -------------------------------------------
 
     def open_file(self, file_filter, file_type_code):
         try:
