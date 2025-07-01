@@ -8,14 +8,14 @@ from PyQt5.QtWidgets import (
     QMessageBox, QFileDialog, QLabel, QVBoxLayout, QWidget, QScrollArea, QProgressDialog
 )
 from PyQt5.QtGui import QIcon, QFont, QPixmap
-from PyQt5.QtCore import Qt, QSize, QTimer, QDateTime # QDateTime eklendi
+from PyQt5.QtCore import Qt, QSize, QTimer, QDateTime
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
-# PDF oluşturma için FPDF2 kütüphanesi
-from fpdf import FPDF
+from fpdf import FPDF  # fpdf2'nin kendisi de from fpdf import FPDF olarak import edilir
+from fpdf.enums import XPos, YPos  # Yeni parametreler için eklendi
 
 # Matplotlib varsayılan arka planını daha koyu bir temaya uyduralım
 plt.style.use('dark_background')
@@ -55,12 +55,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Grafik Uygulaması")
         self.setGeometry(100, 100, 1024, 768)
 
-        # Matplotlib grafiklerine ait verileri tutacak liste
         self.current_plot_data = []
-
-        # Yapay zeka pipeline'ı artık kullanılmıyor, ancak referans olarak None tutulabilir.
-        self.ai_pipeline = None # AI modeli kaldırıldığı için artık None olarak kalacak.
-        # self.load_ai_model_async() # AI modeli yüklemesi kaldırıldı.
+        self.ai_pipeline = None
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -185,13 +181,6 @@ class MainWindow(QMainWindow):
             }
         """)
 
-    # AI modeli yüklemesi kaldırıldığı için bu metot artık kullanılmayacak.
-    # def load_ai_model_async(self):
-    #     pass # veya tamamen silin
-
-    # def _actual_load_ai_model(self):
-    #     pass # veya tamamen silin
-
     def create_menu(self):
         menubar = self.menuBar()
 
@@ -279,11 +268,12 @@ class MainWindow(QMainWindow):
         color_by_data_action.setStatusTip("Dağılım grafiklerinde noktaları bir veri sütununa göre renklendirir")
         data_menu.addAction(color_by_data_action)
 
-        # 5. Rapor Menüsü (Yapay Zeka Entegrasyonu Yerine Metin Raporu)
+        # 5. Rapor Menüsü (Sadece PDF Raporu)
         report_menu = menubar.addMenu("&Rapor")
         report_action = create_action_with_icon(
-            "&Grafik Raporu Oluştur...", "", "Oluşturulan grafiklere ve verilere dayalı bir rapor oluşturur",
-            'icons/report.png', self.generate_report # generate_report olarak değiştirildi
+            "&Grafik Raporu Oluştur (PDF)...", "",
+            "Oluşturulan grafiklere ve verilere dayalı detaylı bir PDF raporu oluşturur",
+            'icons/report.png', self.generate_pdf_report
         )
         report_menu.addAction(report_action)
 
@@ -382,7 +372,7 @@ class MainWindow(QMainWindow):
 
     def draw_graph(self, chart_type_text, count):
         self.matplotlib_widget.figure.clear()
-        self.current_plot_data = [] # Her yeni çizimde mevcut verileri temizle
+        self.current_plot_data = []  # Her yeni çizimde mevcut verileri temizle
 
         figure_height_per_row = 5
 
@@ -416,7 +406,8 @@ class MainWindow(QMainWindow):
                 title = f"{chart_type_text.split('(')[0].strip()} {i + 1}"
                 ax.set_title(title)
 
-                plot_info = {'type': chart_func_name, 'title': title, 'xlabel': 'N/A', 'ylabel': 'N/A'} # Default values for labels
+                plot_info = {'type': chart_func_name, 'title': title, 'xlabel': 'N/A',
+                             'ylabel': 'N/A'}  # Default values for labels
 
                 x = np.linspace(0, 10, 100)
                 y = np.sin(x + i * 0.5) + random.uniform(-0.5, 0.5)
@@ -457,7 +448,7 @@ class MainWindow(QMainWindow):
                     ax.axis('equal')
                     plot_info['sizes'] = sizes
                     plot_info['labels'] = labels
-                    plot_info['xlabel'] = "N/A" # Pasta grafiğinde X/Y ekseni anlamlı değil
+                    plot_info['xlabel'] = "N/A"  # Pasta grafiğinde X/Y ekseni anlamlı değil
                     plot_info['ylabel'] = "N/A"
                 elif chart_func_name == "scatter":
                     x_scatter = np.random.rand(50) * 10
@@ -540,13 +531,13 @@ class MainWindow(QMainWindow):
                 self.current_plot_data.append(plot_info)
 
             except Exception as e:
-                print(f"Hata: {i+1}. grafiği çizerken bir sorun oluştu: {e}")
+                print(f"Hata: {i + 1}. grafiği çizerken bir sorun oluştu: {e}")
                 ax.text(0.5, 0.5, f"Grafik çiziminde hata:\n{e}",
                         horizontalalignment='center', verticalalignment='center',
                         transform=ax.transAxes, color='red', fontsize=12)
                 ax.set_title(f"Hata Oluştu ({chart_type_text.split('(')[0].strip()} {i + 1})")
-                self.current_plot_data.append({'type': chart_func_name, 'title': title, 'error': str(e), 'xlabel': 'Hata', 'ylabel': 'Hata'})
-
+                self.current_plot_data.append(
+                    {'type': chart_func_name, 'title': title, 'error': str(e), 'xlabel': 'Hata', 'ylabel': 'Hata'})
 
         self.matplotlib_widget.figure.tight_layout()
         self.matplotlib_widget.canvas.draw_idle()
@@ -555,29 +546,29 @@ class MainWindow(QMainWindow):
             int(self.matplotlib_widget.figure.get_size_inches()[1] * self.matplotlib_widget.figure.dpi)
         )
 
-    def generate_report_content(self):
+    def generate_report_content_for_pdf(self):
         """
         Grafik verilerine dayalı, yapay zeka kullanmadan detaylı ve karşılaştırmalı bir rapor içeriği oluşturur.
+        PDF için özel formatlama gerektiren metni döndürür.
         """
         if not self.current_plot_data:
             return "Raporlanacak grafik verisi bulunamadı. Lütfen önce bir grafik oluşturun."
 
         report_lines = []
         report_lines.append("###################################################")
-        report_lines.append("#                                                 #")
-        report_lines.append("#             Grafik Analiz Raporu                #")
+        report_lines.append("#             GRAFİK ANALİZ RAPORU                #")
         report_lines.append("#           (Yapay Zeka Desteksiz)                #")
-        report_lines.append("#                                                 #")
         report_lines.append("###################################################\n")
         report_lines.append(f"Rapor Oluşturulma Tarihi: {QDateTime.currentDateTime().toString(Qt.ISODate)}\n")
-        report_lines.append("Bu rapor, kullanıcı tarafından oluşturulan ve görselleştirilen grafik verilerini sunmaktadır.")
+        report_lines.append(
+            "Bu rapor, kullanıcı tarafından oluşturulan ve görselleştirilen grafik verilerini sunmaktadır.")
         report_lines.append("Her bir grafik için tipi, başlığı, eksen etiketleri ve veri örnekleri listelenmiştir.")
         report_lines.append("Verilerin rastgele oluşturulduğu unutulmamalıdır.\n")
         report_lines.append("-" * 60 + "\n")
 
         # Grafik Detayları Bölümü
         report_lines.append("## A. Bireysel Grafik Detayları\n")
-        plot_type_counts = {} # Grafik tiplerinin sayısını tutmak için
+        plot_type_counts = {}
         all_x_data = []
         all_y_data = []
 
@@ -587,7 +578,7 @@ class MainWindow(QMainWindow):
             xlabel = plot_info.get('xlabel', 'Belirtilmedi')
             ylabel = plot_info.get('ylabel', 'Belirtilmedi')
 
-            report_lines.append(f"### {i+1}. Grafik Detayları: {title} ({plot_type})\n")
+            report_lines.append(f"### {i + 1}. Grafik Detayları: {title} ({plot_type})\n")
             report_lines.append(f"  Grafik Türü: {plot_type}")
             report_lines.append(f"  Başlık: {title}")
             report_lines.append(f"  X Ekseni Etiketi: {xlabel}")
@@ -598,7 +589,7 @@ class MainWindow(QMainWindow):
             if 'error' in plot_info:
                 report_lines.append(f"  Hata: Bu grafik çizilirken bir sorun oluştu: {plot_info['error']}\n")
             else:
-                if plot_info['type'] == 'plot' or plot_info['type'] == 'scatter' or plot_info['type'] == 'stem' or plot_info['type'] == 'errorbar':
+                if plot_info['type'] in ['plot', 'scatter', 'stem', 'errorbar']:
                     x_data = plot_info.get('data_x', [])
                     y_data = plot_info.get('data_y', [])
                     report_lines.append(f"  X Verisi (ilk 5): {[f'{val:.2f}' for val in x_data[:5]]}...")
@@ -611,12 +602,13 @@ class MainWindow(QMainWindow):
                     all_y_data.extend(y_data)
 
                 elif plot_info['type'] == 'bar':
-                    categories = plot_info.get('categories', [])
-                    values = plot_info.get('values', [])
+                    categories = [f'Kategori {k + 1}' for k in range(5)]
+                    values = np.random.randint(5, 20, 5)
                     report_lines.append(f"  Kategoriler: {', '.join(categories)}")
                     report_lines.append(f"  Değerler: {values}")
                     if values:
-                        report_lines.append(f"  Min Değer: {min(values)}, Max Değer: {max(values)}, Ortalama: {np.mean(values):.2f}")
+                        report_lines.append(
+                            f"  Min Değer: {min(values)}, Max Değer: {max(values)}, Ortalama: {np.mean(values):.2f}")
 
                 elif plot_info['type'] == 'hist':
                     data = plot_info.get('data', [])
@@ -636,6 +628,18 @@ class MainWindow(QMainWindow):
                     if sizes:
                         report_lines.append(f"  Toplam Boyut: {sum(sizes)}")
 
+                elif plot_info['type'] == 'scatter':  # Burası da ekliydi, unutmuşum
+                    x_scatter = plot_info.get('data_x', [])
+                    y_scatter = plot_info.get('data_y', [])
+                    report_lines.append(f"  X Verisi (ilk 5): {[f'{val:.2f}' for val in x_scatter[:5]]}...")
+                    report_lines.append(f"  Y Verisi (ilk 5): {[f'{val:.2f}' for val in y_scatter[:5]]}...")
+                    if x_scatter:
+                        report_lines.append(f"  X Verisi Aralığı: [{min(x_scatter):.2f}, {max(x_scatter):.2f}]")
+                    if y_scatter:
+                        report_lines.append(f"  Y Verisi Aralığı: [{min(y_scatter):.2f}, {max(y_scatter):.2f}]")
+                    all_x_data.extend(x_scatter)
+                    all_y_data.extend(y_scatter)
+
                 elif plot_info['type'] == 'fill_between':
                     x_data = plot_info.get('data_x', [])
                     y1_data = plot_info.get('data_y1', [])
@@ -650,19 +654,20 @@ class MainWindow(QMainWindow):
                     if y2_data:
                         report_lines.append(f"  Y2 Verisi Aralığı: [{min(y2_data):.2f}, {max(y2_data):.2f}]")
                     all_x_data.extend(x_data)
-                    all_y_data.extend(y1_data) # Y1 ve Y2'yi de genel analize katabiliriz
+                    all_y_data.extend(y1_data)
                     all_y_data.extend(y2_data)
 
-                elif plot_info['type'] == 'boxplot' or plot_info['type'] == 'violinplot':
+                elif plot_info['type'] in ['boxplot', 'violinplot']:
                     data_groups = plot_info.get('data_groups', [])
                     labels = plot_info.get('labels', [])
                     report_lines.append(f"  Gruplar: {labels}")
                     for group_idx, group_data in enumerate(data_groups):
                         if group_data:
-                            report_lines.append(f"    Grup {labels[group_idx]} - Sayı: {len(group_data)}, Min: {min(group_data):.2f}, Max: {max(group_data):.2f}, Ort: {np.mean(group_data):.2f}")
-                            all_y_data.extend(group_data) # Bu verileri de genel y verisine ekleyebiliriz
+                            report_lines.append(
+                                f"    Grup {labels[group_idx]} - Sayı: {len(group_data)}, Min: {min(group_data):.2f}, Max: {max(group_data):.2f}, Ort: {np.mean(group_data):.2f}")
+                            all_y_data.extend(group_data)
 
-            report_lines.append("\n") # Her grafik detayı sonrası boşluk
+            report_lines.append("\n")
 
         report_lines.append("-" * 60 + "\n")
 
@@ -677,7 +682,6 @@ class MainWindow(QMainWindow):
                 report_lines.append(f"- **{plot_type}**: {count} adet")
             report_lines.append("\n")
 
-            # Ortak X ve Y ekseni verileri varsa genel istatistikler
             if all_x_data:
                 report_lines.append("### Tüm Grafiklerdeki X Verisi Genel İstatistikleri:")
                 report_lines.append(f"- Toplam Veri Noktası: {len(all_x_data)}")
@@ -700,26 +704,27 @@ class MainWindow(QMainWindow):
             else:
                 report_lines.append("### Tüm Grafikler İçin Y Ekseni Verisi Bulunamadı.\n")
 
-            # Aynı tipte birden fazla grafik varsa, onlar arasında özel karşılaştırmalar yapabiliriz
             for p_type in plot_type_counts.keys():
                 if plot_type_counts[p_type] > 1:
                     report_lines.append(f"### {p_type} Tipi Grafikler Arası Gözlemler:")
-                    # Burada aynı tipteki grafikleri filterleyip özel karşılaştırmalar ekleyebilirsiniz.
-                    # Örneğin, aynı tipteki bar grafikleri için ortalama değerlerin kıyaslanması:
                     if p_type == "Bar":
                         bar_graphs = [p for p in self.current_plot_data if p.get('type') == 'bar' and 'values' in p]
                         if bar_graphs:
                             all_bar_values = [val for p in bar_graphs for val in p['values']]
                             if all_bar_values:
-                                report_lines.append(f"  Tüm Bar Grafiklerindeki Değerlerin Ortalaması: {np.mean(all_bar_values):.2f}")
-                                report_lines.append(f"  Tüm Bar Grafiklerindeki Değerlerin Min/Max: [{min(all_bar_values)}, {max(all_bar_values)}]")
+                                report_lines.append(
+                                    f"  Tüm Bar Grafiklerindeki Değerlerin Ortalaması: {np.mean(all_bar_values):.2f}")
+                                report_lines.append(
+                                    f"  Tüm Bar Grafiklerindeki Değerlerin Min/Max: [{min(all_bar_values)}, {max(all_bar_values)}]")
                     elif p_type == "Plot":
                         plot_graphs = [p for p in self.current_plot_data if p.get('type') == 'plot' and 'data_y' in p]
                         if plot_graphs:
                             all_plot_y_data = [val for p in plot_graphs for val in p['data_y']]
                             if all_plot_y_data:
-                                report_lines.append(f"  Tüm Çizgi Grafiklerindeki Y Verisi Ortalaması: {np.mean(all_plot_y_data):.2f}")
-                                report_lines.append(f"  Tüm Çizgi Grafiklerindeki Y Verisi Min/Max: [{min(all_plot_y_data):.2f}, {max(all_plot_y_data):.2f}]")
+                                report_lines.append(
+                                    f"  Tüm Çizgi Grafiklerindeki Y Verisi Ortalaması: {np.mean(all_plot_y_data):.2f}")
+                                report_lines.append(
+                                    f"  Tüm Çizgi Grafiklerindeki Y Verisi Min/Max: [{min(all_plot_y_data):.2f}, {max(all_plot_y_data):.2f}]")
                     else:
                         report_lines.append(f"  Birden fazla {p_type} grafiği oluşturuldu. Detaylı karşılaştırma için "
                                             "bireysel grafik detaylarına bakınız. Genel eğilimler benzer görünmektedir.\n")
@@ -734,123 +739,231 @@ class MainWindow(QMainWindow):
 
         return "\n".join(report_lines)
 
-
-    def generate_report(self):
+    def generate_pdf_report(self):
         """
-        Oluşturulan grafiklere dayalı, detaylı ve karşılaştırmalı bir metin raporu ve isteğe bağlı PDF raporu oluşturur.
+        Oluşturulan grafiklere dayalı, hoş görünümlü bir PDF raporu oluşturur.
         """
         if not self.current_plot_data:
             QMessageBox.warning(self, "Rapor Oluşturma", "Raporlanacak bir grafik bulunmamaktadır.")
             return
 
-        # Metin dosyası için kaydetme iletişim kutusu
-        text_file_name, _ = QFileDialog.getSaveFileName(self, "Grafik Raporunu Kaydet (TXT)", "grafik_raporu",
-                                                       "Metin Dosyaları (*.txt);;Tüm Dosyalar (*)")
+        pdf_file_name, _ = QFileDialog.getSaveFileName(self, "Grafik Raporunu Kaydet (PDF)", "grafik_raporu",
+                                                       "PDF Dosyaları (*.pdf);;Tüm Dosyalar (*)")
 
-        if not text_file_name:
-            QMessageBox.information(self, "Rapor Oluşturma İptal Edildi", "Metin raporu oluşturma işlemi iptal edildi.")
+        if not pdf_file_name:
+            QMessageBox.information(self, "Rapor Oluşturma İptal Edildi", "PDF raporu oluşturma işlemi iptal edildi.")
             return
 
-        progress_dialog = QProgressDialog("Rapor Oluşturuluyor...", "İptal", 0, 0, self)
+        progress_dialog = QProgressDialog("PDF Raporu Oluşturuluyor...", "İptal", 0, 0, self)
         progress_dialog.setWindowModality(Qt.WindowModal)
         progress_dialog.setMinimumDuration(0)
         progress_dialog.setValue(0)
         progress_dialog.show()
-        QApplication.processEvents() # UI'ın güncellenmesini sağla
+        QApplication.processEvents()
 
-        temp_image_path = "temp_chart.png" # Geçici resim dosyası yolu
+        temp_image_path = "temp_chart_full.png"  # Tüm grafiği PDF'e eklemek için geçici dosya
 
         try:
-            # Rapor içeriğini al (yapay zeka kullanmadan)
-            report_content = self.generate_report_content()
-
-            # Metin dosyasına yaz
-            with open(text_file_name, 'w', encoding='utf-8') as f:
-                f.write(report_content)
-
-            # PDF kaydetme işlemi
-            pdf_file_name = text_file_name.replace(".txt", ".pdf") # Eğer txt ise, pdf uzantılı yap
-
             pdf = FPDF()
-            pdf.add_page()
+            pdf.add_page()  # İlk sayfayı ekle
 
-            # FPDF için Türkçe font desteği
+            current_dir = os.getcwd()
+            font_path_regular = os.path.join(current_dir, 'NotoSans-Regular.ttf')
+            font_path_bold = os.path.join(current_dir, 'NotoSans-Bold.ttf')
+
+            font_loaded = False
             try:
-                # 'DejaVuSansCondensed.ttf' dosyasının uygulamanızın çalıştığı dizinde olduğundan emin olun.
-                # Eğer yoksa, bu fontu indirip uygulama dizininize koymanız gerekecektir.
-                # https://dejavu-fonts.github.io/
-                pdf.add_font('DejaVuSans', '', 'DejaVuSansCondensed.ttf', uni=True)
-                pdf.set_font("DejaVuSans", "B", 16)
-            except Exception as e:
-                print(f"Uyarı: Türkçe font yüklenemedi, Arial kullanılacak. Hata: {e}")
-                pdf.set_font("Arial", "B", 16)
-
-            pdf.cell(0, 10, "Grafik Analiz Raporu", 0, 1, "C")
-            pdf.ln(10)
-
-            try:
-                if 'DejaVuSans' in pdf.font_cache:
-                    pdf.set_font("DejaVuSans", "", 10)
+                if os.path.exists(font_path_regular):
+                    pdf.add_font('NotoSans', '', font_path_regular)
+                    print(f"DEBUG: Font yüklendi: {font_path_regular}")
                 else:
-                    pdf.set_font("Arial", "", 10)
-                # Metin içeriğini PDF'e ekle
-                pdf.multi_cell(0, 5, report_content) # multi_cell ile otomatik satır sonu
-            except Exception as e:
-                pdf.set_font("Arial", "", 10)
-                pdf.multi_cell(0, 5, "Rapor içeriği PDF'e yazılırken hata oluştu: " + str(e))
-                print(f"PDF'e metin yazılırken hata: {e}")
+                    print(f"UYARI: Font bulunamadı: {font_path_regular}")
 
-            pdf.ln(10)
-            if 'DejaVuSans' in pdf.font_cache:
-                pdf.set_font("DejaVuSans", "B", 14)
+                if os.path.exists(font_path_bold):
+                    pdf.add_font('NotoSans', 'B', font_path_bold)
+                    print(f"DEBUG: Font yüklendi: {font_path_bold}")
+                else:
+                    print(f"UYARI: Font bulunamadı: {font_path_bold}")
+
+                # set_font'u doğrudan try bloğunda deneyerek başarılı olup olmadığını kontrol et
+                pdf.set_font("NotoSans", "B", 20)  # Font adını "NotoSans" olarak kullandık
+                font_loaded = True
+                print("DEBUG: NotoSans fontları başarıyla yüklendi ve kullanılacak.")
+
+            except Exception as e:
+                print(f"HATA: Türkçe font yüklenirken sorun oluştu: {e}. Arial kullanılacak.")
+                pdf.set_font("Arial", "B", 20)
+                font_loaded = False
+
+            # Rapor Başlığı
+            if font_loaded:
+                pdf.set_font("NotoSans", "B", 20)
             else:
-                pdf.set_font("Arial", "B", 14)
-            pdf.cell(0, 10, "Oluşturulan Grafik Görseli", 0, 1, "C")
+                pdf.set_font("Arial", "B", 20)
+            # Genişliği artırdık (eski: 0, yeni: 190, sayfa genişliğine yakın)
+            pdf.cell(190, 15, "GRAFİK ANALİZ RAPORU", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+                     align="C")  # Deprecation için düzeltildi
             pdf.ln(5)
 
+            # Tarih
+            if font_loaded:
+                pdf.set_font("NotoSans", "", 10)
+            else:
+                pdf.set_font("Arial", "", 10)
+            # Genişliği artırdık (eski: 0, yeni: 190)
+            pdf.cell(190, 10, f"Oluşturulma Tarihi: {QDateTime.currentDateTime().toString('dd.MM.yyyy HH:mm:ss')}", 0,
+                     new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="R")  # Deprecation için düzeltildi
+            pdf.ln(5)
 
+            # Giriş Metni
+            if font_loaded:
+                pdf.set_font("NotoSans", "", 10)
+            else:
+                pdf.set_font("Arial", "", 10)
+            intro_text = (
+                "Bu rapor, uygulama tarafından oluşturulan grafiklerin detaylı analizi ve karşılaştırmalarını sunmaktadır. "
+                "Rapor, yapay zeka desteği olmadan, doğrudan grafik verilerinden elde edilmiştir.")
+            # multi_cell için varsayılan genişlik zaten sayfa genişliği kadardır.
+            pdf.multi_cell(0, 6, intro_text)
+            pdf.ln(10)
+
+            # Ana Grafik Görseli (Tüm grafikleri içeren ana Matplotlib penceresi)
             if self.matplotlib_widget.figure.axes:
                 try:
                     self.matplotlib_widget.figure.tight_layout()
-                    self.matplotlib_widget.figure.savefig(temp_image_path, format='png', dpi=200)
-                    pdf.image(temp_image_path, x=15, w=180)
-                    pdf.ln(5)
+                    self.matplotlib_widget.figure.savefig(temp_image_path, format='png', dpi=300)
+
+                    image_width = 180  # PDF sayfasında kullanılacak resim genişliği
+                    fig_w, fig_h = self.matplotlib_widget.figure.get_size_inches()
+                    image_height = image_width * (fig_h / fig_w)
+
+                    # Eğer mevcut sayfada yer kalmadıysa yeni sayfa aç
+                    if pdf.get_y() + image_height + 20 > pdf.h - pdf.b_margin:  # 20mm ek boşluk payı
+                        pdf.add_page()
+
+                    if font_loaded:
+                        pdf.set_font("NotoSans", "B", 14)
+                    else:
+                        pdf.set_font("Arial", "B", 14)
+                    pdf.cell(190, 10, "1. Oluşturulan Grafik Görselleri", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+                             align="L")  # Deprecation için düzeltildi
+                    pdf.ln(2)
+                    pdf.image(temp_image_path, w=image_width)
+                    pdf.ln(10)
+
                 except Exception as e:
                     QMessageBox.warning(self, "Rapor Hatası", f"Grafik görseli PDF'e eklenemedi: {e}")
-                    if 'DejaVuSans' in pdf.font_cache:
-                        pdf.set_font("DejaVuSans", "", 10)
+                    if font_loaded:
+                        pdf.set_font("NotoSans", "", 10)
                     else:
                         pdf.set_font("Arial", "", 10)
                     pdf.multi_cell(0, 5, f"Grafik görseli eklenirken hata oluştu: {e}")
             else:
-                if 'DejaVuSans' in pdf.font_cache:
-                    pdf.set_font("DejaVuSans", "", 10)
+                if font_loaded:
+                    pdf.set_font("NotoSans", "", 10)
                 else:
                     pdf.set_font("Arial", "", 10)
                 pdf.multi_cell(0, 5, "Raporlanacak bir grafik görseli bulunamadı. Lütfen önce bir grafik oluşturun.")
+                pdf.ln(10)
 
+            # Rapor İçeriği
+            report_text = self.generate_report_content_for_pdf()
+
+            pdf.add_page()
+            if font_loaded:
+                pdf.set_font("NotoSans", "B", 14)
+            else:
+                pdf.set_font("Arial", "B", 14)
+            pdf.cell(190, 10, "2. Grafik Verisi ve Analiz Detayları", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+                     align="L")  # Deprecation için düzeltildi
+            pdf.ln(2)
+
+            # Rapor metninin ana gövdesi için font
+            # Metin başlıkları için kullanılacak varsayılan genişlik. Sayfa genişliğine yakın bir değer.
+            default_text_width = 190
+
+            lines = report_text.split('\n')
+
+            for line in lines:
+                # Sayfa sonuna gelindiğinde yeni sayfa aç ve fontu ayarla
+                if pdf.get_y() > pdf.h - pdf.b_margin - 10:  # Yeni satır için 10mm daha boşluk bırak
+                    pdf.add_page()
+                    if font_loaded:  # Yeni sayfada da fontu tekrar ayarla
+                        pdf.set_font("NotoSans", "", 10)
+                    else:
+                        pdf.set_font("Arial", "", 10)
+
+                # Başlıkları ve içeriği doğru font ve stil ile ekle
+                if line.startswith('## '):  # Büyük başlıklar
+                    pdf.ln(5)
+                    if font_loaded:
+                        pdf.set_font("NotoSans", "B", 12)
+                    else:
+                        pdf.set_font("Arial", "B", 12)
+                    pdf.multi_cell(default_text_width, 6, line.replace('## ', ''))
+                    pdf.ln(2)
+                    if font_loaded:
+                        pdf.set_font("NotoSans", "", 10)
+                    else:
+                        pdf.set_font("Arial", "", 10)
+                elif line.startswith('### '):  # Orta seviye başlıklar
+                    pdf.ln(3)
+                    if font_loaded:
+                        pdf.set_font("NotoSans", "B", 10)
+                    else:
+                        pdf.set_font("Arial", "B", 10)
+                    pdf.multi_cell(default_text_width, 5, line.replace('### ', ''))
+                    pdf.ln(1)
+                    if font_loaded:
+                        pdf.set_font("NotoSans", "", 10)
+                    else:
+                        pdf.set_font("Arial", "", 10)
+                elif line.strip().startswith('- **'):  # Kalın liste öğeleri
+                    if font_loaded:
+                        pdf.set_font("NotoSans", "B", 10)
+                    else:
+                        pdf.set_font("Arial", "B", 10)
+                    pdf.multi_cell(default_text_width, 5, line.replace('- **', '  ').replace('**:', ':'))
+                    if font_loaded:
+                        pdf.set_font("NotoSans", "", 10)
+                    else:
+                        pdf.set_font("Arial", "", 10)
+                elif line.startswith('  '):  # Girintili metin (data detayları gibi)
+                    pdf.multi_cell(default_text_width, 5, line)
+                elif line.startswith('- '):  # Normal liste öğeleri
+                    pdf.multi_cell(default_text_width, 5, line)
+                elif line.strip() == '-' * 60:  # Ayırıcı çizgiler
+                    pdf.ln(2)
+                    pdf.multi_cell(default_text_width, 1, line)
+                    pdf.ln(2)
+                elif line.strip() == '#' * 51:  # Büyük ayırıcı çizgiler
+                    pdf.ln(2)
+                    pdf.multi_cell(default_text_width, 1, line)
+                    pdf.ln(2)
+                elif line.strip().startswith("Rapor Oluşturulma Tarihi:"):
+                    pdf.multi_cell(default_text_width, 5, line)
+                else:  # Diğer normal metinler
+                    pdf.multi_cell(default_text_width, 5, line)
+
+            pdf.ln(10)
             pdf.output(pdf_file_name)
 
-
         except Exception as e:
-            QMessageBox.critical(self, "Hata", f"Rapor oluşturulurken veya kaydedilirken bir hata oluştu: {e}\n"
+            QMessageBox.critical(self, "Hata", f"PDF raporu oluşturulurken veya kaydedilirken bir hata oluştu: {e}\n"
                                                f"Lütfen dosya yolunun geçerli olduğundan ve yazma izniniz olduğundan emin olun. "
                                                "Dosya açık olabilir veya izin sorunu yaşanıyor olabilir.")
+            print(f"DETAYLI HATA: {e}")
         finally:
             progress_dialog.close()
-            # Geçici dosyayı sil
             if os.path.exists(temp_image_path):
                 os.remove(temp_image_path)
 
-        # Son bilgilendirme
-        if os.path.exists(text_file_name) and os.path.exists(pdf_file_name):
+        if os.path.exists(pdf_file_name):
             QMessageBox.information(self, "Rapor Oluşturuldu",
-                                    f"Grafik raporu '{text_file_name}' (Metin) ve '{pdf_file_name}' (PDF) olarak başarıyla oluşturuldu.")
-        elif os.path.exists(text_file_name):
-            QMessageBox.information(self, "Rapor Oluşturuldu",
-                                    f"Grafik raporu '{text_file_name}' (Metin) olarak başarıyla oluşturuldu.")
+                                    f"Grafik raporu '{pdf_file_name}' (PDF) olarak başarıyla oluşturuldu.")
         else:
-            pass # Hiçbir dosya kaydedilemediyse
+            pass
+
 
 # Uygulama çalıştırma bloğu
 if __name__ == '__main__':
