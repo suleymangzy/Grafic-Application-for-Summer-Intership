@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
-from fpdf import FPDF  # fpdf2'nin kendisi de from fpdf import FPDF olarak import edilir
-from fpdf.enums import XPos, YPos  # Yeni parametreler için eklendi
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 
 # Matplotlib varsayılan arka planını daha koyu bir temaya uyduralım
 plt.style.use('dark_background')
@@ -552,21 +552,10 @@ class MainWindow(QMainWindow):
         PDF için özel formatlama gerektiren metni döndürür.
         """
         if not self.current_plot_data:
-            return "Raporlanacak grafik verisi bulunamadı. Lütfen önce bir grafik oluşturun."
+            return ["Raporlanacak grafik verisi bulunamadı. Lütfen önce bir grafik oluşturun."]
 
         report_lines = []
-        report_lines.append("###################################################")
-        report_lines.append("#             GRAFİK ANALİZ RAPORU                #")
-        report_lines.append("#           (Yapay Zeka Desteksiz)                #")
-        report_lines.append("###################################################\n")
-        report_lines.append(f"Rapor Oluşturulma Tarihi: {QDateTime.currentDateTime().toString(Qt.ISODate)}\n")
-        report_lines.append(
-            "Bu rapor, kullanıcı tarafından oluşturulan ve görselleştirilen grafik verilerini sunmaktadır.")
-        report_lines.append("Her bir grafik için tipi, başlığı, eksen etiketleri ve veri örnekleri listelenmiştir.")
-        report_lines.append("Verilerin rastgele oluşturulduğu unutulmamalıdır.\n")
-        report_lines.append("-" * 60 + "\n")
 
-        # Grafik Detayları Bölümü
         report_lines.append("## A. Bireysel Grafik Detayları\n")
         plot_type_counts = {}
         all_x_data = []
@@ -592,8 +581,10 @@ class MainWindow(QMainWindow):
                 if plot_info['type'] in ['plot', 'scatter', 'stem', 'errorbar']:
                     x_data = plot_info.get('data_x', [])
                     y_data = plot_info.get('data_y', [])
-                    report_lines.append(f"  X Verisi (ilk 5): {[f'{val:.2f}' for val in x_data[:5]]}...")
-                    report_lines.append(f"  Y Verisi (ilk 5): {[f'{val:.2f}' for val in y_data[:5]]}...")
+                    report_lines.append(
+                        f"  X Verisi (ilk 5): {[f'{val:.2f}' for val in x_data[:min(5, len(x_data))]]}...")
+                    report_lines.append(
+                        f"  Y Verisi (ilk 5): {[f'{val:.2f}' for val in y_data[:min(5, len(y_data))]]}...")
                     if x_data:
                         report_lines.append(f"  X Verisi Aralığı: [{min(x_data):.2f}, {max(x_data):.2f}]")
                     if y_data:
@@ -602,8 +593,8 @@ class MainWindow(QMainWindow):
                     all_y_data.extend(y_data)
 
                 elif plot_info['type'] == 'bar':
-                    categories = [f'Kategori {k + 1}' for k in range(5)]
-                    values = np.random.randint(5, 20, 5)
+                    categories = plot_info.get('categories', [])
+                    values = plot_info.get('values', [])
                     report_lines.append(f"  Kategoriler: {', '.join(categories)}")
                     report_lines.append(f"  Değerler: {values}")
                     if values:
@@ -628,25 +619,16 @@ class MainWindow(QMainWindow):
                     if sizes:
                         report_lines.append(f"  Toplam Boyut: {sum(sizes)}")
 
-                elif plot_info['type'] == 'scatter':  # Burası da ekliydi, unutmuşum
-                    x_scatter = plot_info.get('data_x', [])
-                    y_scatter = plot_info.get('data_y', [])
-                    report_lines.append(f"  X Verisi (ilk 5): {[f'{val:.2f}' for val in x_scatter[:5]]}...")
-                    report_lines.append(f"  Y Verisi (ilk 5): {[f'{val:.2f}' for val in y_scatter[:5]]}...")
-                    if x_scatter:
-                        report_lines.append(f"  X Verisi Aralığı: [{min(x_scatter):.2f}, {max(x_scatter):.2f}]")
-                    if y_scatter:
-                        report_lines.append(f"  Y Verisi Aralığı: [{min(y_scatter):.2f}, {max(y_scatter):.2f}]")
-                    all_x_data.extend(x_scatter)
-                    all_y_data.extend(y_scatter)
-
                 elif plot_info['type'] == 'fill_between':
                     x_data = plot_info.get('data_x', [])
                     y1_data = plot_info.get('data_y1', [])
                     y2_data = plot_info.get('data_y2', [])
-                    report_lines.append(f"  X Verisi (ilk 5): {[f'{val:.2f}' for val in x_data[:5]]}...")
-                    report_lines.append(f"  Y1 Verisi (ilk 5): {[f'{val:.2f}' for val in y1_data[:5]]}...")
-                    report_lines.append(f"  Y2 Verisi (ilk 5): {[f'{val:.2f}' for val in y2_data[:5]]}...")
+                    report_lines.append(
+                        f"  X Verisi (ilk 5): {[f'{val:.2f}' for val in x_data[:min(5, len(x_data))]]}...")
+                    report_lines.append(
+                        f"  Y1 Verisi (ilk 5): {[f'{val:.2f}' for val in y1_data[:min(5, len(y1_data))]]}...")
+                    report_lines.append(
+                        f"  Y2 Verisi (ilk 5): {[f'{val:.2f}' for val in y2_data[:min(5, len(y2_data))]]}...")
                     if x_data:
                         report_lines.append(f"  X Verisi Aralığı: [{min(x_data):.2f}, {max(x_data):.2f}]")
                     if y1_data:
@@ -669,9 +651,8 @@ class MainWindow(QMainWindow):
 
             report_lines.append("\n")
 
-        report_lines.append("-" * 60 + "\n")
-
         # Karşılaştırmalı Analiz Bölümü
+        report_lines.append("-" * 60 + "\n")
         report_lines.append("## B. Grafikler Arası Karşılaştırmalı Analiz\n")
 
         if len(self.current_plot_data) > 1:
@@ -735,9 +716,8 @@ class MainWindow(QMainWindow):
 
         report_lines.append("-" * 60 + "\n")
         report_lines.append("Rapor Sonu.\n")
-        report_lines.append("###################################################")
 
-        return "\n".join(report_lines)
+        return report_lines
 
     def generate_pdf_report(self):
         """
@@ -775,44 +755,59 @@ class MainWindow(QMainWindow):
             try:
                 if os.path.exists(font_path_regular):
                     pdf.add_font('NotoSans', '', font_path_regular)
-                    print(f"DEBUG: Font yüklendi: {font_path_regular}")
-                else:
-                    print(f"UYARI: Font bulunamadı: {font_path_regular}")
-
                 if os.path.exists(font_path_bold):
                     pdf.add_font('NotoSans', 'B', font_path_bold)
-                    print(f"DEBUG: Font yüklendi: {font_path_bold}")
-                else:
-                    print(f"UYARI: Font bulunamadı: {font_path_bold}")
 
-                # set_font'u doğrudan try bloğunda deneyerek başarılı olup olmadığını kontrol et
-                pdf.set_font("NotoSans", "B", 20)  # Font adını "NotoSans" olarak kullandık
+                # Test the font setting
+                pdf.set_font("NotoSans", "B", 20)
                 font_loaded = True
-                print("DEBUG: NotoSans fontları başarıyla yüklendi ve kullanılacak.")
-
             except Exception as e:
                 print(f"HATA: Türkçe font yüklenirken sorun oluştu: {e}. Arial kullanılacak.")
                 pdf.set_font("Arial", "B", 20)
                 font_loaded = False
 
-            # Rapor Başlığı
-            if font_loaded:
-                pdf.set_font("NotoSans", "B", 20)
-            else:
-                pdf.set_font("Arial", "B", 20)
-            # Genişliği artırdık (eski: 0, yeni: 190, sayfa genişliğine yakın)
-            pdf.cell(190, 15, "GRAFİK ANALİZ RAPORU", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT,
-                     align="C")  # Deprecation için düzeltildi
-            pdf.ln(5)
+            # Rapor Başlığı - Üst Kısım
+            header_lines = [
+                "###################################################",
+                "#             GRAFİK ANALİZ RAPORU                #",
+                "#           (Yapay Zeka Desteksiz)                #",
+                "###################################################"
+            ]
+            # Calculate width for centering, excluding margins
+            page_width_minus_margins = pdf.w - pdf.l_margin - pdf.r_margin
 
-            # Tarih
+            for h_line in header_lines:
+                if font_loaded:
+                    # Adjust font size for main title line
+                    if "GRAFİK ANALİZ RAPORU" in h_line:
+                        pdf.set_font("NotoSans", "B", 12)
+                        line_height = 8  # Increased height for main title
+                    else:
+                        pdf.set_font("NotoSans", "B", 10)
+                        line_height = 6  # Standard height for hash lines
+                else:
+                    if "GRAFİK ANALİZ RAPORU" in h_line:
+                        pdf.set_font("Arial", "B", 12)
+                        line_height = 8
+                    else:
+                        pdf.set_font("Arial", "B", 10)
+                        line_height = 6
+
+                # Using cell for each line to ensure centering
+                pdf.cell(page_width_minus_margins, line_height, h_line, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+                         align="C")
+            pdf.ln(5)  # Add extra space after header block
+
+            # Oluşturulma Tarihi
             if font_loaded:
                 pdf.set_font("NotoSans", "", 10)
             else:
                 pdf.set_font("Arial", "", 10)
-            # Genişliği artırdık (eski: 0, yeni: 190)
-            pdf.cell(190, 10, f"Oluşturulma Tarihi: {QDateTime.currentDateTime().toString('dd.MM.yyyy HH:mm:ss')}", 0,
-                     new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="R")  # Deprecation için düzeltildi
+            # Use multi_cell for right alignment across full width, or set x/y
+            pdf.set_x(pdf.l_margin)  # Reset X to left margin before right-aligned text
+            pdf.cell(page_width_minus_margins, 6,
+                     f"Oluşturulma Tarihi: {QDateTime.currentDateTime().toString('dd.MM.yyyy HH:mm:ss')}", 0,
+                     new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="R")
             pdf.ln(5)
 
             # Giriş Metni
@@ -823,9 +818,8 @@ class MainWindow(QMainWindow):
             intro_text = (
                 "Bu rapor, uygulama tarafından oluşturulan grafiklerin detaylı analizi ve karşılaştırmalarını sunmaktadır. "
                 "Rapor, yapay zeka desteği olmadan, doğrudan grafik verilerinden elde edilmiştir.")
-            # multi_cell için varsayılan genişlik zaten sayfa genişliği kadardır.
-            pdf.multi_cell(0, 6, intro_text)
-            pdf.ln(10)
+            pdf.multi_cell(page_width_minus_margins, 6, intro_text)  # Use page_width_minus_margins for width
+            pdf.ln(8)  # Add a bit more space after intro text
 
             # Ana Grafik Görseli (Tüm grafikleri içeren ana Matplotlib penceresi)
             if self.matplotlib_widget.figure.axes:
@@ -837,19 +831,20 @@ class MainWindow(QMainWindow):
                     fig_w, fig_h = self.matplotlib_widget.figure.get_size_inches()
                     image_height = image_width * (fig_h / fig_w)
 
-                    # Eğer mevcut sayfada yer kalmadıysa yeni sayfa aç
-                    if pdf.get_y() + image_height + 20 > pdf.h - pdf.b_margin:  # 20mm ek boşluk payı
+                    # Check if enough space remains for image + buffer
+                    required_space = image_height + 15  # Image height + buffer for title/spacing
+                    if pdf.get_y() + required_space > pdf.h - pdf.b_margin:
                         pdf.add_page()
 
                     if font_loaded:
                         pdf.set_font("NotoSans", "B", 14)
                     else:
                         pdf.set_font("Arial", "B", 14)
-                    pdf.cell(190, 10, "1. Oluşturulan Grafik Görselleri", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT,
-                             align="L")  # Deprecation için düzeltildi
+                    pdf.cell(page_width_minus_margins, 10, "1. Oluşturulan Grafik Görselleri", 0, new_x=XPos.LMARGIN,
+                             new_y=YPos.NEXT, align="L")
                     pdf.ln(2)
-                    pdf.image(temp_image_path, w=image_width)
-                    pdf.ln(10)
+                    pdf.image(temp_image_path, x=(pdf.w - image_width) / 2, w=image_width)  # Resmi ortala
+                    pdf.ln(10)  # Space after image
 
                 except Exception as e:
                     QMessageBox.warning(self, "Rapor Hatası", f"Grafik görseli PDF'e eklenemedi: {e}")
@@ -857,95 +852,105 @@ class MainWindow(QMainWindow):
                         pdf.set_font("NotoSans", "", 10)
                     else:
                         pdf.set_font("Arial", "", 10)
-                    pdf.multi_cell(0, 5, f"Grafik görseli eklenirken hata oluştu: {e}")
+                    pdf.multi_cell(page_width_minus_margins, 6, f"Grafik görseli eklenirken hata oluştu: {e}")
             else:
                 if font_loaded:
                     pdf.set_font("NotoSans", "", 10)
                 else:
                     pdf.set_font("Arial", "", 10)
-                pdf.multi_cell(0, 5, "Raporlanacak bir grafik görseli bulunamadı. Lütfen önce bir grafik oluşturun.")
+                pdf.multi_cell(page_width_minus_margins, 6,
+                               "Raporlanacak bir grafik görseli bulunamadı. Lütfen önce bir grafik oluşturun.")
                 pdf.ln(10)
 
-            # Rapor İçeriği
-            report_text = self.generate_report_content_for_pdf()
+            # Rapor İçeriği (generate_report_content_for_pdf'den gelen metin)
+            report_lines = self.generate_report_content_for_pdf()
 
-            pdf.add_page()
+            pdf.add_page()  # Yeni sayfada rapor detaylarına geç
             if font_loaded:
                 pdf.set_font("NotoSans", "B", 14)
             else:
                 pdf.set_font("Arial", "B", 14)
-            pdf.cell(190, 10, "2. Grafik Verisi ve Analiz Detayları", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT,
-                     align="L")  # Deprecation için düzeltildi
-            pdf.ln(2)
+            pdf.cell(page_width_minus_margins, 10, "2. Grafik Verisi ve Analiz Detayları", 0, new_x=XPos.LMARGIN,
+                     new_y=YPos.NEXT, align="L")
+            pdf.ln(5)  # Space after section title
 
-            # Rapor metninin ana gövdesi için font
-            # Metin başlıkları için kullanılacak varsayılan genişlik. Sayfa genişliğine yakın bir değer.
-            default_text_width = 190
+            for line in report_lines:
+                # Calculate estimated height for the current line
+                # This is a rough estimate; multi_cell would calculate exact height
+                # but this helps with proactive page breaks.
+                estimated_line_height = 6  # Default line height
+                if line.startswith('## '):
+                    estimated_line_height = 7 + 5  # Line height + ln space
+                elif line.startswith('### '):
+                    estimated_line_height = 6 + 3
+                elif line.strip() == '-' * 60:
+                    estimated_line_height = 1 + 4  # Line height + ln space
 
-            lines = report_text.split('\n')
-
-            for line in lines:
-                # Sayfa sonuna gelindiğinde yeni sayfa aç ve fontu ayarla
-                if pdf.get_y() > pdf.h - pdf.b_margin - 10:  # Yeni satır için 10mm daha boşluk bırak
+                # Check for page break BEFORE drawing the line
+                # Add a small buffer (e.g., 5mm) to trigger page break earlier
+                if pdf.get_y() + estimated_line_height + 5 > pdf.h - pdf.b_margin:
                     pdf.add_page()
-                    if font_loaded:  # Yeni sayfada da fontu tekrar ayarla
+                    # Reset font on new page for consistent look
+                    if font_loaded:
                         pdf.set_font("NotoSans", "", 10)
                     else:
                         pdf.set_font("Arial", "", 10)
 
+                # Set X position to left margin before printing each line
+                pdf.set_x(pdf.l_margin)
+
                 # Başlıkları ve içeriği doğru font ve stil ile ekle
-                if line.startswith('## '):  # Büyük başlıklar
-                    pdf.ln(5)
+                if line.startswith('## '):  # Büyük başlıklar (A. Bireysel Grafik Detayları gibi)
+                    pdf.ln(5)  # Extra space before main section title
                     if font_loaded:
                         pdf.set_font("NotoSans", "B", 12)
                     else:
                         pdf.set_font("Arial", "B", 12)
-                    pdf.multi_cell(default_text_width, 6, line.replace('## ', ''))
-                    pdf.ln(2)
-                    if font_loaded:
+                    pdf.multi_cell(page_width_minus_margins, 7, line.replace('## ', ''), new_x=XPos.LMARGIN,
+                                   new_y=YPos.NEXT)
+                    pdf.ln(2)  # Space after main section title
+                    if font_loaded:  # Revert to normal font after heading
                         pdf.set_font("NotoSans", "", 10)
                     else:
                         pdf.set_font("Arial", "", 10)
-                elif line.startswith('### '):  # Orta seviye başlıklar
-                    pdf.ln(3)
+                elif line.startswith('### '):  # Orta seviye başlıklar (1. Grafik Detayları gibi)
+                    pdf.ln(3)  # Extra space before sub-section title
                     if font_loaded:
                         pdf.set_font("NotoSans", "B", 10)
                     else:
                         pdf.set_font("Arial", "B", 10)
-                    pdf.multi_cell(default_text_width, 5, line.replace('### ', ''))
-                    pdf.ln(1)
-                    if font_loaded:
+                    pdf.multi_cell(page_width_minus_margins, 6, line.replace('### ', ''), new_x=XPos.LMARGIN,
+                                   new_y=YPos.NEXT)
+                    pdf.ln(1)  # Space after sub-section title
+                    if font_loaded:  # Revert to normal font after heading
                         pdf.set_font("NotoSans", "", 10)
                     else:
                         pdf.set_font("Arial", "", 10)
-                elif line.strip().startswith('- **'):  # Kalın liste öğeleri
+                elif line.strip().startswith('- **'):  # Kalın liste öğeleri (Grafik Tipi: Bar gibi)
                     if font_loaded:
                         pdf.set_font("NotoSans", "B", 10)
                     else:
                         pdf.set_font("Arial", "B", 10)
-                    pdf.multi_cell(default_text_width, 5, line.replace('- **', '  ').replace('**:', ':'))
-                    if font_loaded:
+                    pdf.multi_cell(page_width_minus_margins, 5, line.replace('- **', '  ').replace('**:', ':'),
+                                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    if font_loaded:  # Revert to normal font after bold item
                         pdf.set_font("NotoSans", "", 10)
                     else:
                         pdf.set_font("Arial", "", 10)
                 elif line.startswith('  '):  # Girintili metin (data detayları gibi)
-                    pdf.multi_cell(default_text_width, 5, line)
+                    pdf.multi_cell(page_width_minus_margins, 5, line, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 elif line.startswith('- '):  # Normal liste öğeleri
-                    pdf.multi_cell(default_text_width, 5, line)
+                    pdf.multi_cell(page_width_minus_margins, 5, line, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 elif line.strip() == '-' * 60:  # Ayırıcı çizgiler
-                    pdf.ln(2)
-                    pdf.multi_cell(default_text_width, 1, line)
-                    pdf.ln(2)
-                elif line.strip() == '#' * 51:  # Büyük ayırıcı çizgiler
-                    pdf.ln(2)
-                    pdf.multi_cell(default_text_width, 1, line)
-                    pdf.ln(2)
-                elif line.strip().startswith("Rapor Oluşturulma Tarihi:"):
-                    pdf.multi_cell(default_text_width, 5, line)
+                    pdf.ln(2)  # Space before separator
+                    pdf.cell(page_width_minus_margins, 1, line, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+                    pdf.ln(2)  # Space after separator
+                elif line.strip() == '':  # Handle empty lines to create line breaks
+                    pdf.ln(5)  # Consistent spacing for blank lines
                 else:  # Diğer normal metinler
-                    pdf.multi_cell(default_text_width, 5, line)
+                    pdf.multi_cell(page_width_minus_margins, 5, line, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-            pdf.ln(10)
+            pdf.ln(10)  # Rapor sonu boşluk
             pdf.output(pdf_file_name)
 
         except Exception as e:
