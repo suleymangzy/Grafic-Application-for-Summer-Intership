@@ -112,7 +112,7 @@ class StartPage(QWidget):
                     raise ValueError("Dosya boş veya okunamadı")
 
                 for col in df.columns:
-                    converted_series = pd.to_datetime(df[col], errors='coerce')
+                    converted_series = pd.to_datetime(df[col], format='%d.%m.%Y', errors='coerce')
                     # Yüzde 50'den fazlası tarih olarak başarıyla dönüştürülebiliyorsa dönüştür
                     if (converted_series.notna().sum() > 0) and \
                             (converted_series.notna().sum() / len(df) > 0.5): # Yüzde 50'den fazlası
