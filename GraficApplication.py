@@ -13,7 +13,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_pdf import PdfPages
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -289,14 +288,14 @@ class DataSelectionPage(QWidget):
         main_layout.addWidget(title_label)
 
         grouping_group = QHBoxLayout()
-        grouping_group.addWidget(QLabel("<b>Gruplama Değişkeni (A Sütunu):</b>"))
+        grouping_group.addWidget(QLabel("<b>Gruplama Değişkeni (Tarihler):</b>"))
         self.cmb_grouping = QComboBox()
         self.cmb_grouping.currentIndexChanged.connect(self.populate_grouped)
         grouping_group.addWidget(self.cmb_grouping)
         main_layout.addLayout(grouping_group)
 
         grouped_group = QHBoxLayout()
-        grouped_group.addWidget(QLabel("<b>Gruplanan Değişkenler (B Sütunu):</b>"))
+        grouped_group.addWidget(QLabel("<b>Gruplanan Değişkenler (Ürünler):</b>"))
         self.lst_grouped = QListWidget()
         self.lst_grouped.setSelectionMode(QListWidget.MultiSelection)
         self.lst_grouped.itemSelectionChanged.connect(self.update_next_button_state)
@@ -304,7 +303,7 @@ class DataSelectionPage(QWidget):
         main_layout.addLayout(grouped_group)
 
         metrics_group = QVBoxLayout()
-        metrics_group.addWidget(QLabel("<b>Metrikler (H-BD, AP hariç):</b>"))
+        metrics_group.addWidget(QLabel("<b>Metrikler :</b>"))
         self.metrics_scroll_area = QScrollArea()
         self.metrics_scroll_area.setWidgetResizable(True)
         self.metrics_content_widget = QWidget()
@@ -668,7 +667,7 @@ class GraphsPage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Pasta Grafik Rapor Uygulaması")
+        self.setWindowTitle("SMD-ROBOT.xlsx Grafik & Rapor Uygulaması")
         self.resize(1200, 900)
 
         self.excel_path: Path | None = None
@@ -718,8 +717,8 @@ class MainWindow(QMainWindow):
 
             a_idx = excel_col_to_index('A')
             b_idx = excel_col_to_index('B')
-            bp_idx = excel_col_to_index('F') # Changed to 'F' for 'Üretim Yok'
-            oee_idx = excel_col_to_index('BF') # Changed to 'BF' for OEE
+            f_idx = excel_col_to_index('F') # Changed to 'F' for 'Üretim Yok'
+            oee_idx = excel_col_to_index('BP') # Changed to 'BF' for OEE
 
             if a_idx < len(self.df.columns):
                 self.grouping_col_name = self.df.columns[a_idx]
@@ -734,19 +733,19 @@ class MainWindow(QMainWindow):
                 self.grouped_col_name = None
 
             self.bp_col_name = None
-            if bp_idx < len(self.df.columns):
-                self.bp_col_name = self.df.columns[bp_idx]
+            if f_idx < len(self.df.columns):
+                self.f_col_name = self.df.columns[f_idx]
                 logging.info("BP sütunu (HAT ÇALIŞMADI için): %s", self.bp_col_name)
             else:
                 logging.warning("BP sütunu ('F' indeksi) Excel dosyasında bulunamadı. 'HAT ÇALIŞMADI' değeri '00:00:00;%100' olarak gösterilecek.")
-                self.bp_col_name = None
+                self.f_col_name = None
 
             self.oee_col_name = None # Reset OEE column name
             if oee_idx < len(self.df.columns):
                 self.oee_col_name = self.df.columns[oee_idx]
-                logging.info("OEE sütunu ('BF' indeksi): %s", self.oee_col_name)
+                logging.info("OEE sütunu ('BP' indeksi): %s", self.oee_col_name)
             else:
-                logging.warning("OEE sütunu ('BF' indeksi) Excel dosyasında bulunamadı. OEE değeri '0%' olarak gösterilecek.")
+                logging.warning("OEE sütunu ('BP' indeksi) Excel dosyasında bulunamadı. OEE değeri '0%' olarak gösterilecek.")
                 self.oee_col_name = None
 
 
@@ -847,6 +846,7 @@ def main() -> None:
     except Exception as e:
         QMessageBox.critical(None, "Uygulama Hatası", f"Beklenmeyen bir hata oluştu: {e}\nUygulama kapatılıyor.")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     print(">> GraficApplication – Sürüm 3 – 3 Tem 2025 – page 1 grafik")
