@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import sys
 import logging
 import datetime
@@ -7,15 +5,15 @@ from pathlib import Path
 from typing import List, Tuple, Any
 
 import pandas as pd
-import numpy as np  # NaN ve sayısal işlemler için
+import numpy as np
 
 import matplotlib
 
-matplotlib.use("Agg")  # GUI bağımlı olmayan backend
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_pdf import PdfPages  # PDF'e kaydetmek için
+from matplotlib.backends.backend_pdf import PdfPages
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -35,13 +33,10 @@ from PyQt5.QtWidgets import (
     QStackedWidget,
     QScrollArea,
     QFrame,
-    QCheckBox,  # Metrikler için checkbox
+    QCheckBox,
 )
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Sabitler & Logging
-# ────────────────────────────────────────────────────────────────────────────────
-GRAPHS_PER_PAGE = 1  # Her sayfada 1 grafik
+GRAPHS_PER_PAGE = 1
 REQ_SHEETS = {"SMD-OEE", "ROBOT", "DALGA_LEHİM"}
 
 logging.basicConfig(
@@ -50,79 +45,47 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-# Matplotlib için Türkçe karakter desteği ve stil
 plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False  # Negatif işaretlerini düzgün göster
+plt.rcParams['axes.unicode_minus'] = False
 
-
-# ────────────────────────────────────────────────────────────────────────────────
-# Yardımcı Fonksiyonlar
-# ────────────────────────────────────────────────────────────────────────────────
 
 def excel_col_to_index(col_letter: str) -> int:
-    """'AP' -> 41 gibi 0-tabanlı index döndürür."""
     index = 0
     for char in col_letter.upper():
         if not char.isalpha():
             raise ValueError(f"Geçersiz sütun harfi: {col_letter}")
         index = index * 26 + (ord(char) - ord('A') + 1)
-    return index - 1  # 0-tabanlı yapmak için -1
+    return index - 1
 
 
-# Süre formatındaki verileri güvenli bir şekilde saniyeye çeviren fonksiyon
 def seconds_from_timedelta(series: pd.Series) -> pd.Series:
-    """
-    Pandas Serisindeki çeşitli süre formatlarını (timedelta string, datetime.time, float)
-    güvenli bir şekilde toplam saniyeye çevirir.
-    """
     seconds_series = pd.Series(0.0, index=series.index, dtype=float)
-
-    # 1. datetime.time objelerini işle
     is_time_obj = series.apply(lambda x: isinstance(x, datetime.time))
     if is_time_obj.any():
         time_objects = series[is_time_obj]
         seconds_series.loc[is_time_obj] = time_objects.apply(
             lambda t: t.hour * 3600 + t.minute * 60 + t.second + t.microsecond / 1e6
         )
-
-    # 2. Geri kalan (henüz işlenmemiş ve NaN olmayan) değerleri stringe çevir ve timedelta olarak dene
-    # NaN'ları ve daha önce işlenmiş time objelerini dışarıda bırak
     remaining_indices = series.index[~is_time_obj & series.notna()]
     if not remaining_indices.empty:
         remaining_series_str = series.loc[remaining_indices].astype(str).str.strip()
-
-        # Boş stringleri NaN yap
         remaining_series_str = remaining_series_str.replace('', np.nan)
-
         converted_td = pd.to_timedelta(remaining_series_str, errors='coerce')
-
-        # Geçerli timedelta dönüşümlerini ata
         valid_td_mask = pd.notna(converted_td)
         seconds_series.loc[remaining_indices[valid_td_mask]] = converted_td[valid_td_mask].dt.total_seconds()
-
-    # 3. Hala NaN olan (string/timedelta dönüşümü başarısız olan) değerleri sayısal olarak dene (örn: Excel'deki gün tabanlı süreler)
     remaining_nan_indices = seconds_series.index[seconds_series.isna()]
     if not remaining_nan_indices.empty:
         numeric_values = pd.to_numeric(series.loc[remaining_nan_indices], errors='coerce')
-
-        # Sadece geçerli sayısal değerleri işle
         valid_numeric_mask = pd.notna(numeric_values)
         if valid_numeric_mask.any():
             converted_from_numeric = pd.to_timedelta(numeric_values[valid_numeric_mask], unit='D', errors='coerce')
-
             valid_num_td_mask = pd.notna(converted_from_numeric)
             seconds_series.loc[remaining_nan_indices[valid_numeric_mask & valid_num_td_mask]] = converted_from_numeric[
                 valid_num_td_mask].dt.total_seconds()
+    return seconds_series.fillna(0.0)
 
-    return seconds_series.fillna(0.0)  # Tüm NaN'ları 0.0 ile doldur
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# QThread: GraphWorker
-# ────────────────────────────────────────────────────────────────────────────────
 
 class GraphWorker(QThread):
-    # finished sinyali: List[Tuple[gruplanmış_değişken_değeri_str, metrik_toplamları_PandasSerisi, bp_toplam_saniye_float]]
     finished = pyqtSignal(list)
     progress = pyqtSignal(int)
     error = pyqtSignal(str)
@@ -130,11 +93,11 @@ class GraphWorker(QThread):
     def __init__(
             self,
             df: pd.DataFrame,
-            grouping_col_name: str,  # A sütununun başlığı (Gruplama Değişkeni)
-            grouped_col_name: str,  # B sütununun başlığı (Gruplanan Değişken)
-            grouped_values: List[str],  # Seçilen B sütunu değerleri (yani grafik başına bir)
-            metric_cols: List[str],  # Seçilen metrik sütun başlıkları
-            bp_col_name: str | None  # BP sütununun başlığı (varsa)
+            grouping_col_name: str,
+            grouped_col_name: str,
+            grouped_values: List[str],
+            metric_cols: List[str],
+            bp_col_name: str | None
     ) -> None:
         super().__init__()
         self.df = df.copy()
@@ -144,38 +107,30 @@ class GraphWorker(QThread):
         self.metric_cols = metric_cols
         self.bp_col_name = bp_col_name
 
-    # ------------------------------------------------------------------
     def run(self) -> None:
         try:
             results: List[Tuple[str, pd.Series, float]] = []
             total = len(self.grouped_values)
-
-            # İlgili tüm sütunları (metrikler ve BP) bir kere saniyeye dönüştür
-            # Bu, her döngüde aynı dönüşümü tekrarlamayı önler.
             all_cols_to_process = list(set(self.metric_cols + ([self.bp_col_name] if self.bp_col_name else [])))
-            df_processed_times = self.df.copy()  # Orijinal DataFrame'i değiştirmemek için kopyala
+            df_processed_times = self.df.copy()
 
             for col in all_cols_to_process:
                 if col in df_processed_times.columns:
                     df_processed_times[col] = seconds_from_timedelta(df_processed_times[col])
 
-            # Şimdi her bir 'Gruplanan Değişken' değeri için grafik verisini hazırla
             for i, current_grouped_val in enumerate(self.grouped_values, 1):
-                # Sadece mevcut gruplanmış değişkenin verilerini içeren alt küme
                 subset_df_for_chart = df_processed_times[
                     df_processed_times[self.grouped_col_name].astype(str) == current_grouped_val
-                    ].copy()  # Filter by B column value
+                    ].copy()
 
-                # Metriklerin toplamını al
                 sums = subset_df_for_chart[self.metric_cols].sum()
-                sums = sums[sums > 0]  # Sadece pozitif toplamı olan metrikleri dahil et
+                sums = sums[sums > 0]
 
                 bp_total_seconds = 0.0
                 if self.bp_col_name and self.bp_col_name in subset_df_for_chart.columns:
-                    # BP sütununun toplam saniyesini al
                     bp_total_seconds = subset_df_for_chart[self.bp_col_name].sum()
 
-                if not sums.empty:  # Eğer çizilecek geçerli metrik toplamı varsa
+                if not sums.empty:
                     results.append((current_grouped_val, sums, bp_total_seconds))
                 self.progress.emit(int(i / total * 100))
 
@@ -184,10 +139,6 @@ class GraphWorker(QThread):
             logging.exception("GraphWorker hata")
             self.error.emit(str(exc))
 
-
-# ────────────────────────────────────────────────────────────────────────────────
-# Sayfalar
-# ────────────────────────────────────────────────────────────────────────────────
 
 class FileSelectionPage(QWidget):
     def __init__(self, main_window: "MainWindow") -> None:
@@ -253,13 +204,12 @@ class FileSelectionPage(QWidget):
             self.cmb_sheet.show()
             self.btn_next.setEnabled(True)
 
-            # Eğer tek sayfa varsa otomatik seç
             if len(sheets) == 1:
                 self.main_window.selected_sheet = sheets[0]
                 self.sheet_selection_label.setText(f"İşlenecek Sayfa: <b>{self.main_window.selected_sheet}</b>")
-                self.cmb_sheet.hide()  # ComboBox'ı gizle
+                self.cmb_sheet.hide()
             else:
-                self.main_window.selected_sheet = self.cmb_sheet.currentText()  # Varsayılanı ata
+                self.main_window.selected_sheet = self.cmb_sheet.currentText()
 
             logging.info("Dosya seçildi: %s", path)
 
@@ -301,7 +251,6 @@ class DataSelectionPage(QWidget):
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
 
-        # Gruplama Değişkeni (A sütunu)
         grouping_group = QHBoxLayout()
         grouping_group.addWidget(QLabel("<b>Gruplama Değişkeni (A Sütunu):</b>"))
         self.cmb_grouping = QComboBox()
@@ -309,17 +258,14 @@ class DataSelectionPage(QWidget):
         grouping_group.addWidget(self.cmb_grouping)
         main_layout.addLayout(grouping_group)
 
-        # Gruplanan Değişkenler (B sütunu)
         grouped_group = QHBoxLayout()
         grouped_group.addWidget(QLabel("<b>Gruplanan Değişkenler (B Sütunu):</b>"))
         self.lst_grouped = QListWidget()
         self.lst_grouped.setSelectionMode(QListWidget.MultiSelection)
-        self.lst_grouped.itemSelectionChanged.connect(
-            self.update_next_button_state)  # Seçim değiştiğinde butonu güncelle
+        self.lst_grouped.itemSelectionChanged.connect(self.update_next_button_state)
         grouped_group.addWidget(self.lst_grouped)
         main_layout.addLayout(grouped_group)
 
-        # Metrikler (H-BD, AP hariç)
         metrics_group = QVBoxLayout()
         metrics_group.addWidget(QLabel("<b>Metrikler (H-BD, AP hariç):</b>"))
         self.metrics_scroll_area = QScrollArea()
@@ -330,16 +276,15 @@ class DataSelectionPage(QWidget):
         metrics_group.addWidget(self.metrics_scroll_area)
         main_layout.addLayout(metrics_group)
 
-        # Butonlar
         nav_layout = QHBoxLayout()
         self.btn_back = QPushButton("← Geri")
         self.btn_back.clicked.connect(lambda: self.main_window.goto_page(0))
         nav_layout.addWidget(self.btn_back)
 
         self.btn_next = QPushButton("İleri →")
-        self.btn_next.setEnabled(False)  # Başlangıçta pasif
+        self.btn_next.setEnabled(False)
         self.btn_next.clicked.connect(self.go_next)
-        nav_layout.addStretch(1)  # Boşluk ekle
+        nav_layout.addStretch(1)
         nav_layout.addWidget(self.btn_next)
         main_layout.addLayout(nav_layout)
 
@@ -347,14 +292,13 @@ class DataSelectionPage(QWidget):
         df = self.main_window.df
         if df.empty:
             QMessageBox.critical(self, "Hata", "Veri yüklenemedi. Lütfen dosyayı kontrol edin.")
-            self.main_window.goto_page(0)  # Dosya seçim sayfasına geri dön
+            self.main_window.goto_page(0)
             return
 
-        # Gruplama değişkeni (A sütunu başlığı)
         self.cmb_grouping.clear()
         if self.main_window.grouping_col_name and self.main_window.grouping_col_name in df.columns:
             grouping_vals = sorted(df[self.main_window.grouping_col_name].dropna().astype(str).unique())
-            grouping_vals = [s for s in grouping_vals if s.strip()]  # Boş stringleri de filtrele
+            grouping_vals = [s for s in grouping_vals if s.strip()]
             self.cmb_grouping.addItems(grouping_vals)
             if not grouping_vals:
                 QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) boş veya geçerli değer içermiyor.")
@@ -362,7 +306,7 @@ class DataSelectionPage(QWidget):
             QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) bulunamadı veya boş.")
 
         self.populate_metrics_checkboxes()
-        self.populate_grouped()  # Gruplama değişkeni seçildiğinde otomatik doldur
+        self.populate_grouped()
 
     def populate_grouped(self) -> None:
         self.lst_grouped.clear()
@@ -370,29 +314,25 @@ class DataSelectionPage(QWidget):
         df = self.main_window.df
 
         if selected_grouping_val and self.main_window.grouping_col_name and self.main_window.grouped_col_name:
-            # Gruplama değişkeniyle filtrele
             filtered_df = df[df[self.main_window.grouping_col_name].astype(str) == selected_grouping_val]
-
-            # Gruplanan değişkenleri (B sütunu) al
             grouped_vals = sorted(filtered_df[self.main_window.grouped_col_name].dropna().astype(str).unique())
-            grouped_vals = [s for s in grouped_vals if s.strip()]  # Boş stringleri filtrele
+            grouped_vals = [s for s in grouped_vals if s.strip()]
 
             for gv in grouped_vals:
                 item = QListWidgetItem(gv)
-                item.setSelected(True)  # Varsayılan olarak seçili gelmeli
+                item.setSelected(True)
                 self.lst_grouped.addItem(item)
 
-        self.update_next_button_state()  # Gruplanan değişkenler listesi güncellendiğinde buton durumunu kontrol et
+        self.update_next_button_state()
 
     def populate_metrics_checkboxes(self):
-        # Önceki checkbox'ları temizle
         while self.metrics_layout.count():
             item = self.metrics_layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
 
-        self.main_window.selected_metrics = []  # Seçili metrik listesini sıfırla
+        self.main_window.selected_metrics = []
 
         if not self.main_window.metric_cols:
             empty_label = QLabel("Seçilebilir metrik bulunamadı.", parent=self.metrics_content_widget)
@@ -403,28 +343,24 @@ class DataSelectionPage(QWidget):
 
         for col_name in self.main_window.metric_cols:
             checkbox = QCheckBox(col_name)
-
-            # Sütunun tamamının boş olup olmadığını kontrol et
             is_entirely_empty = self.main_window.df[col_name].dropna().empty
-
-            checkbox.setChecked(not is_entirely_empty)  # Boş değilse varsayılan olarak seçili
-            checkbox.setEnabled(not is_entirely_empty)  # Boş ise devre dışı bırak
+            checkbox.setChecked(not is_entirely_empty)
+            checkbox.setEnabled(not is_entirely_empty)
 
             if is_entirely_empty:
                 checkbox.setText(f"{col_name} (Boş)")
                 checkbox.setStyleSheet("color: gray;")
             else:
-                # Başlangıçta seçili olanları main_window'a ekle
                 self.main_window.selected_metrics.append(col_name)
 
             checkbox.stateChanged.connect(self.on_metric_checkbox_changed)
             self.metrics_layout.addWidget(checkbox)
 
-        self.update_next_button_state()  # Metrik checkbox'ları güncellendiğinde buton durumunu kontrol et
+        self.update_next_button_state()
 
     def on_metric_checkbox_changed(self, state):
         sender_checkbox = self.sender()
-        metric_name = sender_checkbox.text().replace(" (Boş)", "")  # "(Boş)" etiketini kaldır
+        metric_name = sender_checkbox.text().replace(" (Boş)", "")
 
         if state == Qt.Checked:
             if metric_name not in self.main_window.selected_metrics:
@@ -436,7 +372,6 @@ class DataSelectionPage(QWidget):
         self.update_next_button_state()
 
     def update_next_button_state(self):
-        # Gruplanan değişken seçimi ve en az bir metrik seçili ise ileri butonu aktif
         is_grouped_selected = bool(self.lst_grouped.selectedItems())
         is_metric_selected = bool(self.main_window.selected_metrics)
         self.btn_next.setEnabled(is_grouped_selected and is_metric_selected)
@@ -458,7 +393,7 @@ class GraphsPage(QWidget):
         self.worker: GraphWorker | None = None
         self.init_ui()
 
-        self.figures_data: List[Tuple[str, Figure]] = []  # (grouped_val, Figure) listesi
+        self.figures_data: List[Tuple[str, Figure]] = []
         self.current_page = 0
 
     def init_ui(self):
@@ -475,27 +410,22 @@ class GraphsPage(QWidget):
         self.progress.setTextVisible(True)
         main_layout.addWidget(self.progress)
 
-        # Navigasyon butonları (üst kısım)
         nav_top = QHBoxLayout()
         self.btn_back = QPushButton("← Veri Seçimi")
         self.btn_back.clicked.connect(lambda: self.main_window.goto_page(1))
         nav_top.addWidget(self.btn_back)
-        nav_top.addStretch(1)  # Boşluk
+        nav_top.addStretch(1)
         self.lbl_page = QLabel("Sayfa 0 / 0")
         self.lbl_page.setAlignment(Qt.AlignCenter)
         nav_top.addWidget(self.lbl_page)
-        nav_top.addStretch(1)  # Boşluk
-        self.btn_save_pdf = QPushButton("Tüm Grafikleri Kaydet (PDF)")
-        self.btn_save_pdf.clicked.connect(self.save_all_graphs_to_pdf)
-        nav_top.addWidget(self.btn_save_pdf)
+        nav_top.addStretch(1)
 
-        self.btn_save_image = QPushButton("Tek Grafiği Kaydet (PNG/JPEG)")
+        self.btn_save_image = QPushButton("Grafiği Kaydet (PNG/JPEG)")
         self.btn_save_image.clicked.connect(self.save_single_graph_as_image)
         nav_top.addWidget(self.btn_save_image)
 
         main_layout.addLayout(nav_top)
 
-        # Kaydırılabilir grafik alanı
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.canvas_holder = QWidget()
@@ -504,7 +434,6 @@ class GraphsPage(QWidget):
         self.scroll.setWidget(self.canvas_holder)
         main_layout.addWidget(self.scroll)
 
-        # Sayfa navigasyon butonları (alt kısım)
         nav_bottom = QHBoxLayout()
         nav_bottom.addStretch(1)
         self.btn_prev = QPushButton("← Önceki Sayfa")
@@ -525,14 +454,13 @@ class GraphsPage(QWidget):
 
         df = self.main_window.df
 
-        # GraphWorker'a doğru sütun adlarını ve BP sütun adını ilet
         self.worker = GraphWorker(
             df=df,
             grouping_col_name=self.main_window.grouping_col_name,
             grouped_col_name=self.main_window.grouped_col_name,
             grouped_values=self.main_window.grouped_values,
             metric_cols=self.main_window.selected_metrics,
-            bp_col_name=self.main_window.bp_col_name  # BP sütun adını ilet
+            bp_col_name=self.main_window.bp_col_name
         )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.finished.connect(self.on_results)
@@ -545,45 +473,38 @@ class GraphsPage(QWidget):
             QMessageBox.information(self, "Veri yok", "Grafik oluşturulamadı. Seçilen kriterlere göre veri bulunamadı.")
             return
 
-        # Tek tip bir renk paleti kullanarak tutarlılık sağlayın
-        # Metriklerin sayısı kadar renk alalım.
         colors_palette = plt.cm.get_cmap('tab20', len(self.main_window.selected_metrics))
         metric_colors = {metric: colors_palette(i) for i, metric in enumerate(self.main_window.selected_metrics)}
 
         for grouped_val, metric_sums, bp_total_seconds in results:
-            fig = Figure(figsize=(8, 8), dpi=100)  # A4 sayfa üzerinde yer alacak uygun boyut
+            fig = Figure(figsize=(8, 8), dpi=100)
             ax = fig.add_subplot(111)
 
-            # Donut grafiği oluştur
             wedges, texts, autotexts = ax.pie(
                 metric_sums.values,
                 labels=[f"{label}; {int(value // 3600):02d}:{int((value % 3600) // 60):02d}:{int(value % 60):02d}" for
                         label, value in metric_sums.items()],
-                autopct="%1.0f%%",  # Yüzdeyi göster (tam sayı olarak)
+                autopct="%1.0f%%",
                 startangle=90,
                 counterclock=False,
                 colors=[metric_colors[m] for m in metric_sums.index],
-                wedgeprops=dict(width=0.4, edgecolor='w')  # Donut grafik için
+                wedgeprops=dict(width=0.4, edgecolor='w')
             )
 
-            # Ortadaki yüzdeyi hesapla
             total_metric_seconds = metric_sums.sum()
             oee_percentage = 0.0
             if bp_total_seconds > 0:
                 oee_percentage = (total_metric_seconds / bp_total_seconds) * 100
 
-            # Donut grafiğin ortasına OEE ve BP bilgisini yaz
             ax.text(0, 0, f"OEE\n%{oee_percentage:.0f}",
                     horizontalalignment='center', verticalalignment='center',
                     fontsize=24, fontweight='bold', color='black')
 
-            # Başlık oluşturma
             current_date = datetime.datetime.now().strftime("%d.%m.%Y")
             title_text = f"{current_date}\n{self.main_window.grouped_col_name.upper()}: {grouped_val.upper()}"
 
-            ax.set_title(title_text, fontweight="bold", fontsize=16, pad=20)  # title_text yukarı kaydırıldı
+            ax.set_title(title_text, fontweight="bold", fontsize=16, pad=20)
 
-            # Etiketlerin stilini ayarla
             for autotext in autotexts:
                 autotext.set_color('black')
                 autotext.set_fontsize(10)
@@ -591,22 +512,20 @@ class GraphsPage(QWidget):
                 text.set_fontsize(10)
                 text.set_color('black')
 
-            ax.axis("equal")  # Oranların eşit olmasını sağlar (daire şeklinde görünüm)
-            fig.tight_layout(rect=[0, 0, 1, 0.95])  # Başlık için yer bırak
+            ax.axis("equal")
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-            # Toplam duruş süresini ve OEE bilgisini sol alta ekle
-            if self.main_window.bp_col_name and bp_total_seconds > 0:
-                total_duration_seconds = bp_total_seconds
-                total_duration_hours = int(total_duration_seconds // 3600)
-                total_duration_minutes = int((total_duration_seconds % 3600) // 60)
-                total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
-                fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
-                         fontsize=14, fontweight='bold', verticalalignment='bottom')
+            # TOPLAM DURUŞ hesaplaması ve gösterimi (kullanıcının isteği üzerine değiştirildi)
+            total_duration_seconds = total_metric_seconds  # Grafikteki metriklerin toplamı
+            total_duration_hours = int(total_duration_seconds // 3600)
+            total_duration_minutes = int((total_duration_seconds % 3600) // 60)
+            total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
+            fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
+                     fontsize=14, fontweight='bold', verticalalignment='bottom')
 
-            self.figures_data.append((grouped_val, fig))  # Figürü listeye ekle
+            self.figures_data.append((grouped_val, fig))
         self.display_page()
 
-    # ------------------------------------------------------------------
     def display_page(self) -> None:
         self.clear_canvases()
         start = self.current_page * GRAPHS_PER_PAGE
@@ -615,12 +534,12 @@ class GraphsPage(QWidget):
         for _, fig in self.figures_data[start:end]:
             canvas = FigureCanvas(fig)
             frame = QFrame()
-            frame.setFrameShape(QFrame.StyledPanel)  # Çerçeve ekle
+            frame.setFrameShape(QFrame.StyledPanel)
             frame.setLineWidth(1)
             vb = QVBoxLayout(frame)
             vb.addWidget(canvas)
             self.vbox_canvases.addWidget(frame)
-        self.vbox_canvases.addStretch(1)  # Sayfadaki grafikleri üste hizala
+        self.vbox_canvases.addStretch(1)
         self.update_page_label()
 
     def clear_canvases(self) -> None:
@@ -628,7 +547,7 @@ class GraphsPage(QWidget):
             item = self.vbox_canvases.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-            elif item.layout():  # İç içe layoutları da temizle
+            elif item.layout():
                 self.clear_layout(item.layout())
 
     def clear_layout(self, layout):
@@ -644,7 +563,6 @@ class GraphsPage(QWidget):
         self.lbl_page.setText(f"Sayfa {self.current_page + 1} / {total_pages}")
         self.btn_prev.setEnabled(self.current_page > 0)
         self.btn_next.setEnabled((self.current_page + 1) * GRAPHS_PER_PAGE < len(self.figures_data))
-        # Tek grafiği kaydet butonu, görüntülenecek grafik varsa aktif olsun
         self.btn_save_image.setEnabled(len(self.figures_data) > 0)
 
     def next_page(self) -> None:
@@ -656,58 +574,6 @@ class GraphsPage(QWidget):
         if self.current_page > 0:
             self.current_page -= 1
             self.display_page()
-
-    def save_all_graphs_to_pdf(self) -> None:
-        if not self.figures_data:
-            QMessageBox.warning(self, "Grafik yok", "Kaydedilecek grafik bulunamadı.")
-            return
-
-        file_name, _ = QFileDialog.getSaveFileName(self, "Grafikleri PDF Olarak Kaydet", "", "PDF Dosyaları (*.pdf)")
-
-        if not file_name:
-            return
-
-        try:
-            with PdfPages(file_name) as pdf:
-                for _, fig in self.figures_data:
-                    # PDF'e kaydederken figürü sıkıca sığdır
-                    pdf.savefig(fig, bbox_inches='tight', pad_inches=0.5)
-
-                # Tüm grafiklerin açıklamasını kapsayacak şekilde genel renk legend'ı
-                if self.main_window.selected_metrics:
-                    legend_fig = Figure(figsize=(8.27, 11.69))  # A4 boyutunda boş bir sayfa (dikey)
-                    legend_ax = legend_fig.add_subplot(111)
-                    legend_ax.set_axis_off()  # Eksenleri gizle
-
-                    handles = []
-                    labels = []
-                    colors_palette = plt.cm.get_cmap('tab20', len(self.main_window.selected_metrics))
-
-                    # Seçili metriklerin her biri için legend öğesi oluştur
-                    for i, metric in enumerate(self.main_window.selected_metrics):
-                        color = colors_palette(i)
-                        handle = plt.Rectangle((0, 0), 1, 1, fc=color, edgecolor='black')
-                        handles.append(handle)
-                        labels.append(metric)
-
-                    # Legend'ı A4 sayfasının sağ alt köşesine yerleştir
-                    legend_ax.legend(handles, labels, title="Metrik Legendı",
-                                     loc='lower right', bbox_to_anchor=(0.95, 0.05),
-                                     fontsize=9, title_fontsize=10, frameon=True, fancybox=True, shadow=True, ncol=2)
-
-                    pdf.savefig(legend_fig, bbox_inches='tight', pad_inches=0.5)
-                    plt.close(legend_fig)  # Oluşturulan legend figürünü kapat
-
-            QMessageBox.information(self, "Başarılı", f"Grafikler '{file_name}' konumuna başarıyla kaydedildi.")
-        except Exception as e:
-            QMessageBox.critical(self, "Hata", f"Grafikler kaydedilirken bir hata oluştu: {e}")
-        finally:
-            # Kaydetme işlemi bittikten sonra figürleri ve canvasları temizle
-            self.clear_canvases()
-            for _, fig in self.figures_data:
-                plt.close(fig)
-            self.figures_data.clear()
-            self.update_page_label()
 
     def save_single_graph_as_image(self) -> None:
         if not self.figures_data:
@@ -721,9 +587,8 @@ class GraphsPage(QWidget):
 
         grouped_val, current_fig = self.figures_data[current_figure_index]
 
-        # Varsayılan dosya adı ve filtreler
-        default_filename = f"grafik_{grouped_val}.png"
-        filters = "PNG Dosyaları (*.png);;JPEG Dosyaları (*.jpeg *.jpg)"
+        default_filename = f"grafik_{grouped_val}.jpeg"
+        filters = "JPEG Dosyaları (*.jpeg *.jpg);;PNG Dosyaları (*.png)"
 
         file_name, selected_filter = QFileDialog.getSaveFileName(
             self, "Grafiği Resim Olarak Kaydet", default_filename, filters
@@ -733,13 +598,12 @@ class GraphsPage(QWidget):
             return
 
         try:
-            # Seçilen filtreye göre formatı belirle
-            if "png" in selected_filter.lower():
-                format = 'png'
-            elif "jpeg" in selected_filter.lower() or "jpg" in selected_filter.lower():
+            if "jpeg" in selected_filter.lower() or "jpg" in selected_filter.lower():
                 format = 'jpeg'
+            elif "png" in selected_filter.lower():
+                format = 'png'
             else:
-                format = 'png'  # Varsayılan olarak PNG
+                format = 'jpeg'
 
             current_fig.savefig(file_name, bbox_inches='tight', pad_inches=0.5, format=format, dpi=300)
             QMessageBox.information(self, "Başarılı", f"Grafik '{file_name}' konumuna başarıyla kaydedildi.")
@@ -747,32 +611,27 @@ class GraphsPage(QWidget):
             QMessageBox.critical(self, "Hata", f"Grafik kaydedilirken bir hata oluştu: {e}")
 
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Main Window
-# ────────────────────────────────────────────────────────────────────────────────
-
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Pasta Grafik Rapor Uygulaması")
         self.resize(1200, 900)
 
-        # Uygulama genelinde kullanılacak paylaşılan veriler
         self.excel_path: Path | None = None
         self.selected_sheet: str = ""
         self.df: pd.DataFrame = pd.DataFrame()
-        self.grouping_col_name: str | None = None  # A sütununun başlığı
-        self.grouped_col_name: str | None = None  # B sütununun başlığı
-        self.bp_col_name: str | None = None  # BP sütununun başlığı
-        self.metric_cols: List[str] = []  # Tüm geçerli metrik sütun başlıkları
-        self.grouped_values: List[str] = []  # Seçilen gruplanan değişken değerleri (B sütunu)
-        self.selected_metrics: List[str] = []  # Kullanıcının seçtiği metrik sütun başlıkları
+        self.grouping_col_name: str | None = None
+        self.grouped_col_name: str | None = None
+        self.bp_col_name: str | None = None
+        self.metric_cols: List[str] = []
+        self.grouped_values: List[str] = []
+        self.selected_metrics: List[str] = []
 
         self.init_ui()
 
     def init_ui(self):
         self.stacked_widget = QStackedWidget(self)
-        self.setCentralWidget(self.stacked_widget)  # QMainWindow'ın merkezi widget'ı yap
+        self.setCentralWidget(self.stacked_widget)
 
         self.file_selection_page = FileSelectionPage(self)
         self.data_selection_page = DataSelectionPage(self)
@@ -785,29 +644,23 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.file_selection_page)
 
     def goto_page(self, index: int) -> None:
-        """Belirtilen indexteki sayfaya geçiş yapar ve sayfayı yeniler."""
         self.stacked_widget.setCurrentIndex(index)
-        if index == 1:  # Data Selection Page
+        if index == 1:
             self.data_selection_page.refresh()
-        elif index == 2:  # Graphs Page
+        elif index == 2:
             self.graphs_page.enter_page()
 
     def load_excel(self) -> None:
-        """Seçilen Excel dosyasını okur ve sütunları işler."""
         if not self.excel_path or not self.selected_sheet:
             QMessageBox.critical(self, "Hata", "Dosya yolu veya sayfa adı belirtilmedi.")
             return
 
         logging.info("Excel okunuyor: %s | Sheet: %s", self.excel_path, self.selected_sheet)
         try:
-            # İlk satırı başlık olarak oku
             df_raw = pd.read_excel(self.excel_path, sheet_name=self.selected_sheet, header=0)
-
-            # Sütun isimlerini temizle ve büyük harfe çevir
             df_raw.columns = df_raw.columns.astype(str).str.strip().str.upper()
-            self.df = df_raw  # DataFrame'i ata
+            self.df = df_raw
 
-            # A ve B sütun adlarını dinamik olarak belirle
             a_idx = excel_col_to_index('A')
             b_idx = excel_col_to_index('B')
             bp_idx = excel_col_to_index('BP')
@@ -824,7 +677,6 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Uyarı", f"Excel'de 'B' ({b_idx + 1}. sütun) bulunamadı.")
                 self.grouped_col_name = None
 
-            # BP sütun adını belirle
             self.bp_col_name = None
             if bp_idx < len(self.df.columns):
                 self.bp_col_name = self.df.columns[bp_idx]
@@ -833,27 +685,22 @@ class MainWindow(QMainWindow):
                 logging.warning(
                     "BP sütunu ('BP' indeksi) Excel dosyasında bulunamadı. Grafik başlıklarında BP değeri gösterilmeyecek.")
 
-            # Metrik sütunlarını belirle (H'den BD'ye kadar, AP hariç)
             h_idx = excel_col_to_index("H")
             bd_idx = excel_col_to_index("BD")
             ap_idx = excel_col_to_index("AP")
 
             potential_metrics_from_range = []
-            # Sütun indekslerinin DataFrame sütun sayısı içinde olduğundan emin olun
             max_col_idx = len(self.df.columns) - 1
 
             if h_idx <= max_col_idx and bd_idx <= max_col_idx and h_idx <= bd_idx:
                 for i in range(h_idx, bd_idx + 1):
                     col_name = self.df.columns[i]
-                    # Sadece AP sütunu hariç
-                    if self.df.columns.get_loc(col_name) != ap_idx:  # get_loc ile indeks kontrolü daha güvenli
+                    if self.df.columns.get_loc(col_name) != ap_idx:
                         potential_metrics_from_range.append(col_name)
             else:
                 QMessageBox.warning(self, "Uyarı",
                                     f"Metrik aralığı (H-BD) geçersiz veya sütunlar bulunamadı. (H:{h_idx + 1}, BD:{bd_idx + 1}, Toplam Sütun:{len(self.df.columns)})")
 
-            # Sadece değeri olan metrik sütunlarını dahil et
-            # Sütunun tamamı boş veya sadece boşluk içeren stringlerse dışla
             self.metric_cols = [
                 c for c in potential_metrics_from_range
                 if c in self.df.columns and not self.df[c].dropna().empty and not self.df[c].astype(str).str.strip().eq(
@@ -865,38 +712,32 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Okuma hatası",
                                  f"Excel dosyası yüklenirken veya işlenirken bir hata oluştu: {e}\nLütfen dosyanın bozuk olmadığından ve formatının doğru olduğundan emin olun.")
-            self.df = pd.DataFrame()  # Hata durumunda DataFrame'i sıfırla
+            self.df = pd.DataFrame()
             self.excel_path = None
             self.selected_sheet = None
 
 
-# ────────────────────────────────────────────────────────────────────────────────
-# main()
-# ────────────────────────────────────────────────────────────────────────────────
-
 def main() -> None:
     app = QApplication(sys.argv)
-
-    # Global stil ayarları (kullanıcı dostu arayüz için)
     app.setStyleSheet("""
         QWidget {
             font-family: 'Segoe UI', Arial, sans-serif;
             font-size: 10pt;
-            background-color: #f0f2f5; /* Açık gri arka plan */
+            background-color: #f0f2f5;
             color: #333333;
         }
         QLabel {
             margin-bottom: 5px;
             color: #555555;
         }
-        QLabel#title_label { /* ID seçici */
-            color: #2c3e50; /* Koyu mavi */
+        QLabel#title_label {
+            color: #2c3e50;
             font-size: 18pt;
             font-weight: bold;
             margin-bottom: 20px;
         }
         QPushButton {
-            background-color: #007bff; /* Mavi */
+            background-color: #007bff;
             color: white;
             padding: 10px 20px;
             border-radius: 5px;
@@ -905,7 +746,7 @@ def main() -> None:
             margin: 5px;
         }
         QPushButton:hover {
-            background-color: #0056b3; /* Koyu mavi hover */
+            background-color: #0056b3;
         }
         QPushButton:disabled {
             background-color: #cccccc;
@@ -939,7 +780,6 @@ def main() -> None:
         win.show()
         sys.exit(app.exec_())
     except Exception as e:
-        # Genel uygulama seviyesi hata yakalama
         QMessageBox.critical(None, "Uygulama Hatası", f"Beklenmeyen bir hata oluştu: {e}\nUygulama kapatılıyor.")
         sys.exit(1)
 
