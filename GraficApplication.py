@@ -97,7 +97,8 @@ class GraphWorker(QThread):
             grouped_values: List[str],
             metric_cols: List[str],
             bp_col_name: str | None,
-            oee_col_name: str | None # Added oee_col_name
+            oee_col_name: str | None,
+            selected_grouping_val: str # Add selected_grouping_val
     ) -> None:
         super().__init__()
         self.df = df.copy()
@@ -106,13 +107,13 @@ class GraphWorker(QThread):
         self.grouped_values = grouped_values
         self.metric_cols = metric_cols
         self.bp_col_name = bp_col_name
-        self.oee_col_name = oee_col_name # Store oee_col_name
+        self.oee_col_name = oee_col_name
+        self.selected_grouping_val = selected_grouping_val # Store selected_grouping_val
 
     def run(self) -> None:
         try:
             results: List[Tuple[str, pd.Series, float, str]] = []
             total = len(self.grouped_values)
-            # Only process metric_cols for time conversion. BP will be handled separately for OEE value if needed.
             all_cols_to_process = list(set(self.metric_cols + ([self.bp_col_name] if self.bp_col_name else [])))
             df_processed_times = self.df.copy()
 
@@ -121,9 +122,11 @@ class GraphWorker(QThread):
                     df_processed_times[col] = seconds_from_timedelta(df_processed_times[col])
 
             for i, current_grouped_val in enumerate(self.grouped_values, 1):
+                # Filter by both grouping_col_name and grouped_col_name
                 subset_df_for_chart = df_processed_times[
-                    df_processed_times[self.grouped_col_name].astype(str) == current_grouped_val
-                    ].copy()
+                    (df_processed_times[self.grouping_col_name].astype(str) == self.selected_grouping_val) &
+                    (df_processed_times[self.grouped_col_name].astype(str) == current_grouped_val)
+                ].copy()
 
                 sums = subset_df_for_chart[self.metric_cols].sum()
                 sums = sums[sums > 0]
@@ -132,18 +135,18 @@ class GraphWorker(QThread):
                 if self.bp_col_name and self.bp_col_name in subset_df_for_chart.columns:
                     bp_total_seconds = subset_df_for_chart[self.bp_col_name].sum()
 
-                # Get OEE value directly from the column specified as oee_col_name
-                oee_display_value = "0%" # Default value
+                oee_display_value = "0%"
                 if self.oee_col_name and self.oee_col_name in self.df.columns:
-                    # Find the row in the original df that matches the current grouped value
-                    matching_rows = self.df[self.df[self.grouped_col_name].astype(str) == current_grouped_val]
+                    matching_rows = self.df[
+                        (self.df[self.grouping_col_name].astype(str) == self.selected_grouping_val) &
+                        (self.df[self.grouped_col_name].astype(str) == current_grouped_val)
+                    ]
                     if not matching_rows.empty:
                         oee_value_raw = matching_rows[self.oee_col_name].iloc[0]
                         if pd.notna(oee_value_raw):
                             try:
                                 oee_value_float: float
                                 if isinstance(oee_value_raw, str):
-                                    # Attempt to convert string to float, removing '%' if present
                                     oee_value_str = oee_value_raw.replace('%', '').strip()
                                     oee_value_float = float(oee_value_str)
                                 elif isinstance(oee_value_raw, (int, float)):
@@ -151,20 +154,14 @@ class GraphWorker(QThread):
                                 else:
                                     raise ValueError("Unsupported OEE value type or format")
 
-                                # Determine if it's a decimal (e.g., 0.51) or a whole number (e.g., 51)
                                 if 0.0 <= oee_value_float <= 1.0 and oee_value_float != 0:
-                                    # It's a decimal percentage, convert to 0-100 scale
                                     oee_display_value = f"{oee_value_float * 100:.0f}%"
                                 elif oee_value_float > 1.0:
-                                    # It's already on a 0-100 scale
                                     oee_display_value = f"{oee_value_float:.0f}%"
                                 else:
-                                    # Handle 0 or negative values, display as 0%
                                     oee_display_value = "0%"
                             except (ValueError, TypeError):
-                                # If conversion fails (e.g., "#SAYI/D!" or other non-numeric strings), keep default "0%"
                                 oee_display_value = "0%"
-
 
                 if not sums.empty:
                     results.append((current_grouped_val, sums, bp_total_seconds, oee_display_value))
@@ -414,6 +411,7 @@ class DataSelectionPage(QWidget):
 
     def go_next(self) -> None:
         self.main_window.grouped_values = [i.text() for i in self.lst_grouped.selectedItems()]
+        self.main_window.selected_grouping_val = self.cmb_grouping.currentText() # Store selected grouping value
 
         if not self.main_window.grouped_values or not self.main_window.selected_metrics:
             QMessageBox.warning(self, "Seçim Eksik", "Lütfen en az bir gruplanan değişken ve bir metrik seçin.")
@@ -496,8 +494,9 @@ class GraphsPage(QWidget):
             grouped_col_name=self.main_window.grouped_col_name,
             grouped_values=self.main_window.grouped_values,
             metric_cols=self.main_window.selected_metrics,
-            bp_col_name=self.main_window.bp_col_name,
-            oee_col_name=self.main_window.oee_col_name # Pass OEE column name
+            bp_col_name=self.main_window.f_col_name,  # Use f_col_name for BP
+            oee_col_name=self.main_window.oee_col_name,
+            selected_grouping_val=self.main_window.selected_grouping_val # Pass selected grouping value
         )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.finished.connect(self.on_results)
@@ -510,7 +509,6 @@ class GraphsPage(QWidget):
             QMessageBox.information(self, "Veri yok", "Grafik oluşturulamadı. Seçilen kriterlere göre veri bulunamadı.")
             return
 
-        # Use 'Paired' colormap for better distinction
         colors_palette = plt.cm.get_cmap('Paired', len(self.main_window.selected_metrics))
         metric_colors = {metric: colors_palette(i) for i, metric in enumerate(self.main_window.selected_metrics)}
 
@@ -518,48 +516,34 @@ class GraphsPage(QWidget):
             fig = Figure(figsize=(8, 8), dpi=100)
             ax = fig.add_subplot(111)
 
-            # Donut chart
             wedges, texts, autotexts = ax.pie(
                 metric_sums.values,
-                # Labels formatted as "METRİK ADI; SAAT:DAKİTA; YÜZDE%"
                 labels=[f"{label}; {int(value // 3600):02d}:{int((value % 3600) // 60):02d}; {p:.0f}%"
                         for label, value, p in zip(metric_sums.index, metric_sums.values, metric_sums.values / metric_sums.sum() * 100)],
-                autopct="", # Disable default autopct to use custom labels for percentages
+                autopct="",
                 startangle=90,
                 counterclock=False,
                 colors=[metric_colors[m] for m in metric_sums.index],
                 wedgeprops=dict(width=0.4, edgecolor='w')
             )
 
-            # OEE value in the center
             ax.text(0, 0, f"OEE\n{oee_display_value}",
                     horizontalalignment='center', verticalalignment='center',
                     fontsize=24, fontweight='bold', color='black')
 
-            current_date = datetime.datetime.now().strftime("%d.%m.%Y")
+            current_date = self.main_window.selected_grouping_val
             title_text = f"{current_date}\n{self.main_window.grouped_col_name.upper()}: {grouped_val.upper()}"
 
             ax.set_title(title_text, fontweight="bold", fontsize=16, pad=20)
 
-            # Position labels outside and add a line connecting to the slice
-            # This part is a bit complex for a simple code modification without direct access to label positioning logic of matplotlib.
-            # The current approach for labels in `ax.pie` already tries to place them, but for more precise external labels with lines,
-            # you'd typically need to iterate over wedges and texts, calculate positions, and draw lines manually.
-            # For this request, I'll keep the labels *next to* the slices but improve their readability by including percentages.
-            # To achieve the exact visual style of image_299c97.png with external labels and lines,
-            # more advanced matplotlib annotation techniques would be required.
-            # The current label formatting in `labels` argument makes them more informative.
             for text, autotext in zip(texts, autotexts):
                 text.set_fontsize(10)
                 text.set_color('black')
-                # Autotext (percentage) is removed as it's part of the label now.
-                # If you want separate percentage labels, you'd re-enable autopct and handle positioning.
-                autotext.set_visible(False) # Hide autopct text since we embedded it in the main label
+                autotext.set_visible(False)
 
             ax.axis("equal")
             fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-            # TOPLAM DURUŞ calculation and display
             total_duration_seconds = metric_sums.sum()
             total_duration_hours = int(total_duration_seconds // 3600)
             total_duration_minutes = int((total_duration_seconds % 3600) // 60)
@@ -567,7 +551,6 @@ class GraphsPage(QWidget):
             fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
                      fontsize=14, fontweight='bold', verticalalignment='bottom')
 
-            # Add "HAT ÇALIŞMADI" text and its value below the "TOPLAM DURUŞ" text
             bp_hours = int(bp_total_seconds // 3600)
             bp_minutes = int((bp_total_seconds % 3600) // 60)
             bp_seconds = int(bp_total_seconds % 60)
@@ -675,11 +658,12 @@ class MainWindow(QMainWindow):
         self.df: pd.DataFrame = pd.DataFrame()
         self.grouping_col_name: str | None = None
         self.grouped_col_name: str | None = None
-        self.bp_col_name: str | None = None
+        self.f_col_name: str | None = None # Renamed bp_col_name to f_col_name for clarity
         self.oee_col_name: str | None = None
         self.metric_cols: List[str] = []
         self.grouped_values: List[str] = []
         self.selected_metrics: List[str] = []
+        self.selected_grouping_val: str = "" # New attribute to store the selected grouping value
 
         self.init_ui()
 
@@ -717,8 +701,8 @@ class MainWindow(QMainWindow):
 
             a_idx = excel_col_to_index('A')
             b_idx = excel_col_to_index('B')
-            f_idx = excel_col_to_index('F') # Changed to 'F' for 'Üretim Yok'
-            oee_idx = excel_col_to_index('BP') # Changed to 'BF' for OEE
+            f_idx = excel_col_to_index('F')
+            oee_idx = excel_col_to_index('BP')
 
             if a_idx < len(self.df.columns):
                 self.grouping_col_name = self.df.columns[a_idx]
@@ -732,15 +716,15 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Uyarı", f"Excel'de 'B' ({b_idx + 1}. sütun) bulunamadı.")
                 self.grouped_col_name = None
 
-            self.bp_col_name = None
+            self.f_col_name = None
             if f_idx < len(self.df.columns):
                 self.f_col_name = self.df.columns[f_idx]
-                logging.info("BP sütunu (HAT ÇALIŞMADI için): %s", self.bp_col_name)
+                logging.info("BP sütunu (HAT ÇALIŞMADI için): %s", self.f_col_name)
             else:
                 logging.warning("BP sütunu ('F' indeksi) Excel dosyasında bulunamadı. 'HAT ÇALIŞMADI' değeri '00:00:00;%100' olarak gösterilecek.")
                 self.f_col_name = None
 
-            self.oee_col_name = None # Reset OEE column name
+            self.oee_col_name = None
             if oee_idx < len(self.df.columns):
                 self.oee_col_name = self.df.columns[oee_idx]
                 logging.info("OEE sütunu ('BP' indeksi): %s", self.oee_col_name)
