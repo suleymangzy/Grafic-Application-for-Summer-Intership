@@ -36,7 +36,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
 )
 
-GRAPHS_PER_PAGE = 1  # Tek bir grafik gösterilmesi için ayarlandı
+GRAPHS_PER_PAGE = 1
 REQ_SHEETS = {"SMD-OEE", "ROBOT", "DALGA_LEHİM"}
 
 logging.basicConfig(
@@ -109,15 +109,12 @@ class GraphWorker(QThread):
 
     def run(self) -> None:
         try:
-            # results: List[Tuple[gruplanmış_değişken_değeri_str, metrik_toplamları_PandasSerisi, bp_index_değeri_Any]]
-            results: List[Tuple[str, pd.Series, Any]] = []
+            results: List[Tuple[str, pd.Series, float]] = []
             total = len(self.grouped_values)
-
-            # BP sütunu için zaman dönüşümü yapılmaz, doğrudan değer okunur.
-            all_cols_to_process_for_time = list(set(self.metric_cols))
+            all_cols_to_process = list(set(self.metric_cols + ([self.bp_col_name] if self.bp_col_name else [])))
             df_processed_times = self.df.copy()
 
-            for col in all_cols_to_process_for_time:
+            for col in all_cols_to_process:
                 if col in df_processed_times.columns:
                     df_processed_times[col] = seconds_from_timedelta(df_processed_times[col])
 
@@ -129,19 +126,12 @@ class GraphWorker(QThread):
                 sums = subset_df_for_chart[self.metric_cols].sum()
                 sums = sums[sums > 0]
 
-                # BP değerini doğrudan ilgili satırdan al
-                # Eğer birden fazla satır varsa, ilkini alabiliriz veya ortalamasını/toplamını alabiliriz.
-                # Burada 'ilgili satır' tanımı önemlidir. Basitlik adına, gruplanan değere ait ilk BP değerini alalım.
-                bp_value_for_center = None
+                bp_total_seconds = 0.0
                 if self.bp_col_name and self.bp_col_name in subset_df_for_chart.columns:
-                    # BP sütunundaki ilk değeri al (ya da NaN değilse)
-                    first_bp_val = subset_df_for_chart[self.bp_col_name].dropna().iloc[0] if not subset_df_for_chart[
-                        self.bp_col_name].dropna().empty else None
-                    if first_bp_val is not None:
-                        bp_value_for_center = first_bp_val  # string, float, vs. olabilir
+                    bp_total_seconds = subset_df_for_chart[self.bp_col_name].sum()
 
                 if not sums.empty:
-                    results.append((current_grouped_val, sums, bp_value_for_center))
+                    results.append((current_grouped_val, sums, bp_total_seconds))
                 self.progress.emit(int(i / total * 100))
 
             self.finished.emit(results)
@@ -477,20 +467,21 @@ class GraphsPage(QWidget):
         self.worker.error.connect(lambda m: QMessageBox.critical(self, "Hata", m))
         self.worker.start()
 
-    # results: List[Tuple[gruplanmış_değişken_değeri_str, metrik_toplamları_PandasSerisi, bp_index_değeri_Any]]
-    def on_results(self, results: List[Tuple[str, pd.Series, Any]]) -> None:
+    def on_results(self, results: List[Tuple[str, pd.Series, float]]) -> None:
         self.progress.setValue(100)
         if not results:
             QMessageBox.information(self, "Veri yok", "Grafik oluşturulamadı. Seçilen kriterlere göre veri bulunamadı.")
             return
 
-        colors_palette = plt.cm.get_cmap('tab20', len(self.main_window.selected_metrics))
+        # Use 'Paired' colormap for better distinction
+        colors_palette = plt.cm.get_cmap('Paired', len(self.main_window.selected_metrics))
         metric_colors = {metric: colors_palette(i) for i, metric in enumerate(self.main_window.selected_metrics)}
 
-        for grouped_val, metric_sums, bp_value_for_center in results:
+        for grouped_val, metric_sums, bp_total_seconds in results:
             fig = Figure(figsize=(8, 8), dpi=100)
             ax = fig.add_subplot(111)
 
+            # Donut chart
             wedges, texts, autotexts = ax.pie(
                 metric_sums.values,
                 labels=[f"{label}; {int(value // 3600):02d}:{int((value % 3600) // 60):02d}:{int(value % 60):02d}" for
@@ -503,24 +494,12 @@ class GraphsPage(QWidget):
             )
 
             total_metric_seconds = metric_sums.sum()
+            oee_percentage = 0.0
+            if bp_total_seconds > 0:
+                oee_percentage = (total_metric_seconds / bp_total_seconds) * 100
 
-            # Donat grafiğinin ortasına BP değeri konumlandırılacak
-            center_text = ""
-            if bp_value_for_center is not None:
-                # Eğer BP değeri yüzde ise % işareti ekleyebiliriz.
-                # Sayısal bir değer ise formatlayabiliriz.
-                # Şimdilik, olduğu gibi stringe çevirelim.
-                center_text = f"{bp_value_for_center}"
-                try:  # Eğer sayısal bir değerse ve yüzde olarak ifade edilmek isteniyorsa
-                    float_bp = float(bp_value_for_center)
-                    if 0 <= float_bp <= 1:  # olasılıkla yüzde 0-1 aralığında
-                        center_text = f"%{float_bp * 100:.0f}"
-                    elif float_bp > 1:  # tam sayı yüzde ise
-                        center_text = f"%{float_bp:.0f}"
-                except ValueError:
-                    pass  # String olarak kalır
-
-            ax.text(0, 0, center_text,
+            # OEE percentage in the center
+            ax.text(0, 0, f"OEE\n%{oee_percentage:.0f}",
                     horizontalalignment='center', verticalalignment='center',
                     fontsize=24, fontweight='bold', color='black')
 
@@ -539,13 +518,22 @@ class GraphsPage(QWidget):
             ax.axis("equal")
             fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-            # TOPLAM DURUŞ hesaplaması ve gösterimi (metriklerin toplamı)
-            total_duration_seconds = total_metric_seconds
+            # TOPLAM DURUŞ calculation and display
+            total_duration_seconds = total_metric_seconds  # Sum of metrics in the graph
             total_duration_hours = int(total_duration_seconds // 3600)
             total_duration_minutes = int((total_duration_seconds % 3600) // 60)
             total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
             fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
                      fontsize=14, fontweight='bold', verticalalignment='bottom')
+
+            # Add "HAT ÇALIŞMADI" text and its value below the "TOPLAM DURUŞ" text
+            bp_hours = int(bp_total_seconds // 3600)
+            bp_minutes = int((bp_total_seconds % 3600) // 60)
+            bp_seconds = int(bp_total_seconds % 60)
+            bp_text = f"HAT ÇALIŞMADI; {bp_hours:02d}:{bp_minutes:02d}:{bp_seconds:02d};%100"
+            fig.text(0.05, 0.01, bp_text, transform=fig.transFigure,
+                     fontsize=10, verticalalignment='bottom', bbox=dict(boxstyle='round,pad=0.3', fc='lightgrey', ec='black', lw=0.5))
+
 
             self.figures_data.append((grouped_val, fig))
         self.display_page()
