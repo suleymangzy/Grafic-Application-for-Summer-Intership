@@ -41,7 +41,7 @@ from PyQt5.QtWidgets import (
 # ────────────────────────────────────────────────────────────────────────────────
 # Sabitler & Logging
 # ────────────────────────────────────────────────────────────────────────────────
-GRAPHS_PER_PAGE = 4
+GRAPHS_PER_PAGE = 1  # Her sayfada 1 grafik
 REQ_SHEETS = {"SMD-OEE", "ROBOT", "DALGA_LEHİM"}
 
 logging.basicConfig(
@@ -314,6 +314,8 @@ class DataSelectionPage(QWidget):
         grouped_group.addWidget(QLabel("<b>Gruplanan Değişkenler (B Sütunu):</b>"))
         self.lst_grouped = QListWidget()
         self.lst_grouped.setSelectionMode(QListWidget.MultiSelection)
+        self.lst_grouped.itemSelectionChanged.connect(
+            self.update_next_button_state)  # Seçim değiştiğinde butonu güncelle
         grouped_group.addWidget(self.lst_grouped)
         main_layout.addLayout(grouped_group)
 
@@ -350,10 +352,12 @@ class DataSelectionPage(QWidget):
 
         # Gruplama değişkeni (A sütunu başlığı)
         self.cmb_grouping.clear()
-        if self.main_window.grouping_col_name:
+        if self.main_window.grouping_col_name and self.main_window.grouping_col_name in df.columns:
             grouping_vals = sorted(df[self.main_window.grouping_col_name].dropna().astype(str).unique())
             grouping_vals = [s for s in grouping_vals if s.strip()]  # Boş stringleri de filtrele
             self.cmb_grouping.addItems(grouping_vals)
+            if not grouping_vals:
+                QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) boş veya geçerli değer içermiyor.")
         else:
             QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) bulunamadı veya boş.")
 
@@ -481,9 +485,14 @@ class GraphsPage(QWidget):
         self.lbl_page.setAlignment(Qt.AlignCenter)
         nav_top.addWidget(self.lbl_page)
         nav_top.addStretch(1)  # Boşluk
-        self.btn_save = QPushButton("Grafikleri Kaydet (PDF)")
-        self.btn_save.clicked.connect(self.save_all_graphs_to_pdf)
-        nav_top.addWidget(self.btn_save)
+        self.btn_save_pdf = QPushButton("Tüm Grafikleri Kaydet (PDF)")
+        self.btn_save_pdf.clicked.connect(self.save_all_graphs_to_pdf)
+        nav_top.addWidget(self.btn_save_pdf)
+
+        self.btn_save_image = QPushButton("Tek Grafiği Kaydet (PNG/JPEG)")
+        self.btn_save_image.clicked.connect(self.save_single_graph_as_image)
+        nav_top.addWidget(self.btn_save_image)
+
         main_layout.addLayout(nav_top)
 
         # Kaydırılabilir grafik alanı
@@ -545,36 +554,54 @@ class GraphsPage(QWidget):
             fig = Figure(figsize=(8, 8), dpi=100)  # A4 sayfa üzerinde yer alacak uygun boyut
             ax = fig.add_subplot(111)
 
-            # Pasta grafiği oluştur
-            # labels=metric_sums.index (metrik isimleri), values=metric_sums.values (toplam saniyeler)
+            # Donut grafiği oluştur
             wedges, texts, autotexts = ax.pie(
                 metric_sums.values,
-                labels=metric_sums.index,
-                autopct="%1.1f%%",  # Yüzdeyi göster
+                labels=[f"{label}; {int(value // 3600):02d}:{int((value % 3600) // 60):02d}:{int(value % 60):02d}" for
+                        label, value in metric_sums.items()],
+                autopct="%1.0f%%",  # Yüzdeyi göster (tam sayı olarak)
                 startangle=90,
                 counterclock=False,
-                colors=[metric_colors[m] for m in metric_sums.index]  # Metrik renklerini ata
+                colors=[metric_colors[m] for m in metric_sums.index],
+                wedgeprops=dict(width=0.4, edgecolor='w')  # Donut grafik için
             )
 
+            # Ortadaki yüzdeyi hesapla
+            total_metric_seconds = metric_sums.sum()
+            oee_percentage = 0.0
+            if bp_total_seconds > 0:
+                oee_percentage = (total_metric_seconds / bp_total_seconds) * 100
+
+            # Donut grafiğin ortasına OEE ve BP bilgisini yaz
+            ax.text(0, 0, f"OEE\n%{oee_percentage:.0f}",
+                    horizontalalignment='center', verticalalignment='center',
+                    fontsize=24, fontweight='bold', color='black')
+
             # Başlık oluşturma
-            title = f"{self.main_window.grouped_col_name}: {grouped_val}"
-            if self.main_window.bp_col_name and bp_total_seconds > 0:
-                bp_hours = int(bp_total_seconds // 3600)
-                bp_minutes = int((bp_total_seconds % 3600) // 60)
-                bp_seconds = int(bp_total_seconds % 60)
-                bp_formatted_time = f"{bp_hours:02d}:{bp_minutes:02d}:{bp_seconds:02d}"
-                title += f"\n{self.main_window.bp_col_name}: {bp_formatted_time}"
-            ax.set_title(title, fontweight="bold", fontsize=12)
+            current_date = datetime.datetime.now().strftime("%d.%m.%Y")
+            title_text = f"{current_date}\n{self.main_window.grouped_col_name.upper()}: {grouped_val.upper()}"
+
+            ax.set_title(title_text, fontweight="bold", fontsize=16, pad=20)  # title_text yukarı kaydırıldı
 
             # Etiketlerin stilini ayarla
             for autotext in autotexts:
                 autotext.set_color('black')
-                autotext.set_fontsize(9)
+                autotext.set_fontsize(10)
             for text in texts:
-                text.set_fontsize(9)
+                text.set_fontsize(10)
+                text.set_color('black')
 
             ax.axis("equal")  # Oranların eşit olmasını sağlar (daire şeklinde görünüm)
-            fig.tight_layout()  # Grafiğin sıkıca yerleşmesini sağlar
+            fig.tight_layout(rect=[0, 0, 1, 0.95])  # Başlık için yer bırak
+
+            # Toplam duruş süresini ve OEE bilgisini sol alta ekle
+            if self.main_window.bp_col_name and bp_total_seconds > 0:
+                total_duration_seconds = bp_total_seconds
+                total_duration_hours = int(total_duration_seconds // 3600)
+                total_duration_minutes = int((total_duration_seconds % 3600) // 60)
+                total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
+                fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
+                         fontsize=14, fontweight='bold', verticalalignment='bottom')
 
             self.figures_data.append((grouped_val, fig))  # Figürü listeye ekle
         self.display_page()
@@ -617,6 +644,8 @@ class GraphsPage(QWidget):
         self.lbl_page.setText(f"Sayfa {self.current_page + 1} / {total_pages}")
         self.btn_prev.setEnabled(self.current_page > 0)
         self.btn_next.setEnabled((self.current_page + 1) * GRAPHS_PER_PAGE < len(self.figures_data))
+        # Tek grafiği kaydet butonu, görüntülenecek grafik varsa aktif olsun
+        self.btn_save_image.setEnabled(len(self.figures_data) > 0)
 
     def next_page(self) -> None:
         if (self.current_page + 1) * GRAPHS_PER_PAGE < len(self.figures_data):
@@ -643,9 +672,6 @@ class GraphsPage(QWidget):
                 for _, fig in self.figures_data:
                     # PDF'e kaydederken figürü sıkıca sığdır
                     pdf.savefig(fig, bbox_inches='tight', pad_inches=0.5)
-                    # plt.close(fig) # Figürü kaydettikten sonra kapat, bellek yönetimi için
-                    # Ancak display_page() sırasında çizilen figürleri tutmak gerekiyor,
-                    # bu yüzden burada kapatmamak, onun yerine clear_canvases'te kapatmak daha iyi.
 
                 # Tüm grafiklerin açıklamasını kapsayacak şekilde genel renk legend'ı
                 if self.main_window.selected_metrics:
@@ -665,8 +691,6 @@ class GraphsPage(QWidget):
                         labels.append(metric)
 
                     # Legend'ı A4 sayfasının sağ alt köşesine yerleştir
-                    # bbox_to_anchor=(0.95, 0.05) ile konumu ayarla (sağ alt köşe)
-                    # ncol=2 ile iki sütunlu düzen
                     legend_ax.legend(handles, labels, title="Metrik Legendı",
                                      loc='lower right', bbox_to_anchor=(0.95, 0.05),
                                      fontsize=9, title_fontsize=10, frameon=True, fancybox=True, shadow=True, ncol=2)
@@ -679,12 +703,48 @@ class GraphsPage(QWidget):
             QMessageBox.critical(self, "Hata", f"Grafikler kaydedilirken bir hata oluştu: {e}")
         finally:
             # Kaydetme işlemi bittikten sonra figürleri ve canvasları temizle
-            # Bu, bellek yönetimini optimize eder.
             self.clear_canvases()
             for _, fig in self.figures_data:
-                plt.close(fig)  # Kaydedilmeyen figürleri de kapat
+                plt.close(fig)
             self.figures_data.clear()
             self.update_page_label()
+
+    def save_single_graph_as_image(self) -> None:
+        if not self.figures_data:
+            QMessageBox.warning(self, "Grafik yok", "Kaydedilecek grafik bulunamadı.")
+            return
+
+        current_figure_index = self.current_page * GRAPHS_PER_PAGE
+        if current_figure_index >= len(self.figures_data):
+            QMessageBox.warning(self, "Hata", "Geçerli sayfada gösterilecek grafik bulunmuyor.")
+            return
+
+        grouped_val, current_fig = self.figures_data[current_figure_index]
+
+        # Varsayılan dosya adı ve filtreler
+        default_filename = f"grafik_{grouped_val}.png"
+        filters = "PNG Dosyaları (*.png);;JPEG Dosyaları (*.jpeg *.jpg)"
+
+        file_name, selected_filter = QFileDialog.getSaveFileName(
+            self, "Grafiği Resim Olarak Kaydet", default_filename, filters
+        )
+
+        if not file_name:
+            return
+
+        try:
+            # Seçilen filtreye göre formatı belirle
+            if "png" in selected_filter.lower():
+                format = 'png'
+            elif "jpeg" in selected_filter.lower() or "jpg" in selected_filter.lower():
+                format = 'jpeg'
+            else:
+                format = 'png'  # Varsayılan olarak PNG
+
+            current_fig.savefig(file_name, bbox_inches='tight', pad_inches=0.5, format=format, dpi=300)
+            QMessageBox.information(self, "Başarılı", f"Grafik '{file_name}' konumuna başarıyla kaydedildi.")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Grafik kaydedilirken bir hata oluştu: {e}")
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -755,13 +815,13 @@ class MainWindow(QMainWindow):
             if a_idx < len(self.df.columns):
                 self.grouping_col_name = self.df.columns[a_idx]
             else:
-                QMessageBox.warning(self, "Uyarı", f"Excel'de 'A' ({a_idx + 1}. sütun) sütunu bulunamadı.")
+                QMessageBox.warning(self, "Uyarı", f"Excel'de 'A' ({a_idx + 1}. sütun) bulunamadı.")
                 self.grouping_col_name = None
 
             if b_idx < len(self.df.columns):
                 self.grouped_col_name = self.df.columns[b_idx]
             else:
-                QMessageBox.warning(self, "Uyarı", f"Excel'de 'B' ({b_idx + 1}. sütun) sütunu bulunamadı.")
+                QMessageBox.warning(self, "Uyarı", f"Excel'de 'B' ({b_idx + 1}. sütun) bulunamadı.")
                 self.grouped_col_name = None
 
             # BP sütun adını belirle
@@ -779,10 +839,14 @@ class MainWindow(QMainWindow):
             ap_idx = excel_col_to_index("AP")
 
             potential_metrics_from_range = []
-            if h_idx < len(self.df.columns) and bd_idx < len(self.df.columns) and h_idx <= bd_idx:
+            # Sütun indekslerinin DataFrame sütun sayısı içinde olduğundan emin olun
+            max_col_idx = len(self.df.columns) - 1
+
+            if h_idx <= max_col_idx and bd_idx <= max_col_idx and h_idx <= bd_idx:
                 for i in range(h_idx, bd_idx + 1):
                     col_name = self.df.columns[i]
-                    if i != ap_idx:  # AP sütununu hariç tut
+                    # Sadece AP sütunu hariç
+                    if self.df.columns.get_loc(col_name) != ap_idx:  # get_loc ile indeks kontrolü daha güvenli
                         potential_metrics_from_range.append(col_name)
             else:
                 QMessageBox.warning(self, "Uyarı",
@@ -881,5 +945,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    print(">> GraficApplication – Sürüm 3 – 3 Tem 2025 – page 4 grafik")
+    print(">> GraficApplication – Sürüm 3 – 3 Tem 2025 – page 1 grafik")
     main()
