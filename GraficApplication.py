@@ -51,7 +51,7 @@ plt.rcParams['font.sans-serif'] = ['SimSun', 'Arial', 'Liberation Sans', 'Bitstr
 plt.rcParams['axes.unicode_minus'] = False # Negatif işaretler için
 
 # Global matplotlib ayarları
-plt.rcParams['axes.grid'] = True
+plt.rcParams['axes.grid'] = True # Bar grafiği için aşağıda özel olarak False yapılacak
 plt.rcParams['grid.alpha'] = 0.7
 plt.rcParams['grid.linestyle'] = '--'
 plt.rcParams['grid.linewidth'] = 0.5
@@ -67,8 +67,6 @@ plt.rcParams['ytick.major.size'] = 7
 plt.rcParams['ytick.minor.size'] = 4
 plt.rcParams['xtick.major.width'] = 1.5 # Büyük tick kalınlığı
 plt.rcParams['xtick.minor.width'] = 1 # Küçük tick kalınlığı
-plt.rcParams['ytick.major.width'] = 1.5
-plt.rcParams['ytick.minor.width'] = 1
 plt.rcParams['xtick.top'] = False # Üst tickleri kapat
 plt.rcParams['ytick.right'] = False # Sağ tickleri kapat
 plt.rcParams['axes.edgecolor'] = 'black' # Eksen çizgisi rengi
@@ -213,6 +211,121 @@ class GraphWorker(QThread):
         except Exception as exc:
             logging.exception("GraphWorker hatası oluştu.")
             self.error.emit(f"Grafik oluşturulurken bir hata oluştu: {str(exc)}")
+
+
+class GraphPlotter:
+    """Matplotlib grafikleri oluşturmak için yardımcı sınıf."""
+    @staticmethod
+    def create_donut_chart(
+            ax: plt.Axes,
+            sorted_metrics_series: pd.Series,
+            oee_display_value: str,
+            chart_colors: List[Any],
+            fig: plt.Figure
+    ) -> None:
+        """Donut grafiği oluşturur."""
+        wedges, texts = ax.pie(
+            sorted_metrics_series,
+            autopct=None,  # autopct'i None yaparak sayıları kaldır
+            startangle=90,
+            wedgeprops=dict(width=0.4, edgecolor='w'),
+            colors=chart_colors
+        )
+
+        # OEE değerini grafik merkezine yerleştir
+        ax.text(0, 0, f"OEE\n{oee_display_value}",
+                horizontalalignment='center', verticalalignment='center',
+                fontsize=24, fontweight='bold', color='black')
+
+        # Metrik etiketlerini grafiğin solunda alt alta yerleştirme ve numaralandırma
+        label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
+        label_line_height = 0.05  # Approximate line height for each label
+
+        for i, (metric_name, metric_value) in enumerate(sorted_metrics_series.items()):
+            label_text = (
+                f"{i + 1}. {metric_name}; "  # Numaralandırma eklendi
+                f"{int(metric_value // 3600):02d}:"
+                f"{int((metric_value % 3600) // 60):02d}; "
+                f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%"
+            )
+            y_pos = label_y_start - (i * label_line_height)
+            bbox_props = dict(boxstyle="round,pad=0.3", fc=chart_colors[i], ec=chart_colors[i], lw=0.5)
+            r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
+            luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+            text_color = 'white' if luminance < 0.5 else 'black'
+
+            fig.text(0.02,
+                     y_pos,
+                     label_text,
+                     horizontalalignment='left',
+                     verticalalignment='top',
+                     fontsize=10,
+                     bbox=bbox_props,
+                     transform=fig.transFigure,
+                     color=text_color
+                     )
+
+        ax.set_title("")  # Donut grafik için başlık yok
+        ax.axis("equal")  # Pie chart'ın daire şeklinde görünmesini sağlar
+        fig.tight_layout(rect=[0.25, 0.1, 1, 0.95])
+
+    @staticmethod
+    def create_bar_chart(
+            ax: plt.Axes,
+            sorted_metrics_series: pd.Series,
+            oee_display_value: str,
+            chart_colors: List[Any]
+    ) -> None:
+        """Bar grafiği oluşturur."""
+        metrics = sorted_metrics_series.index.tolist()
+        values = sorted_metrics_series.values.tolist()
+
+        # Saniye değerlerini dakikaya çevir
+        values_minutes = [v / 60 for v in values]
+
+        y_pos = np.arange(len(metrics))
+
+        ax.barh(y_pos, values_minutes, color=chart_colors)
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(metrics, fontsize=10) # Y ekseni etiketlerinde numaralandırma yok
+        ax.invert_yaxis()  # En büyük değeri en üste getir
+
+        # X ekseni değerlerini ve etiketlerini kaldır
+        ax.set_xlabel("")
+        ax.set_xticks([])
+
+        ax.set_title(f"OEE: {oee_display_value}", fontsize=16, fontweight='bold')
+
+        # Grafiğin içinde bulunan hatları (grid) kaldır
+        ax.grid(False)
+
+        # Bar grafiğinin genel şablonunu iki ışının birleşimi şeklinde yap
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        # Sol ve alt eksenler zaten varsayılan olarak görünür olmalı, ancak emin olmak için:
+        ax.spines['left'].set_visible(True)
+        ax.spines['bottom'].set_visible(True)
+
+
+        # Her barın üzerine değeri ve yüzdesini yaz
+        total_sum = sorted_metrics_series.sum()
+        for i, (value, metric_name) in enumerate(zip(values, metrics)):
+            percentage = (value / total_sum) * 100 if total_sum > 0 else 0
+            duration_hours = int(value // 3600)
+            duration_minutes = int((value % 3600) // 60)
+            text_label = f"{duration_hours:02d}:{duration_minutes:02d} ({percentage:.0f}%)"
+
+            # Metin konumunu barın dışına (sağına) al
+            # ha='left' yaparak metnin sol kenarını belirteç pozisyonuna hizala
+            # x_position'a küçük bir boşluk ekleyerek barın dışına taşı
+            text_x_position = (value / 60) + 0.5 # 0.5 dakika = 30 saniye boşluk
+            ax.text(text_x_position, i, text_label,
+                    va='center', ha='left',
+                    fontsize=11, fontweight='bold', # Fontu kalın ve daha büyük yap
+                    color='black') # Metin barın dışında olduğu için her zaman siyah olsun
+
+        ax.set_xlim(left=0)
+        plt.tight_layout(rect=[0.1, 0.1, 0.95, 0.9])
 
 
 class FileSelectionPage(QWidget):
@@ -586,32 +699,6 @@ class GraphsPage(QWidget):
         self.enter_page()
 
 
-    def enter_page(self) -> None:
-        """Bu sayfaya geçildiğinde grafik oluşturma işlemini başlatır."""
-        self.clear_canvases()
-        self.figures_data.clear()
-        self.current_page = 0
-        self.update_page_label()
-        self.progress.setValue(0)
-        self.btn_save_image.setEnabled(False)
-        self.lbl_chart_info.setText("")
-
-        df = self.main_window.df
-
-        self.worker = GraphWorker(
-            df=df,
-            grouping_col_name=self.main_window.grouping_col_name,
-            grouped_col_name=self.main_window.grouped_col_name,
-            grouped_values=self.main_window.grouped_values,
-            metric_cols=self.main_window.selected_metrics,
-            oee_col_name=self.main_window.oee_col_name,
-            selected_grouping_val=self.main_window.selected_grouping_val
-        )
-        self.worker.progress.connect(self.progress.setValue)
-        self.worker.finished.connect(self.on_results)
-        self.worker.error.connect(lambda m: QMessageBox.critical(self, "Hata", m))
-        self.worker.start()
-
     def on_results(self, results: List[Tuple[str, pd.Series, str]]) -> None:
         """GraphWorker'dan gelen sonuçları işler ve grafikleri oluşturur."""
         self.progress.setValue(100)
@@ -621,11 +708,13 @@ class GraphsPage(QWidget):
             self.btn_save_image.setEnabled(False)
             return
 
+        self.figures_data.clear() # Mevcut tüm grafikleri temizle
+
         fig_width_inches = 700 / 100
         fig_height_inches = 460 / 100
 
         for grouped_val, metric_sums, oee_display_value in results:
-            fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches)) # subplot_kw aspect="equal" kaldırıldı
+            fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches))
             background_color = 'white'
             fig.patch.set_facecolor(background_color)
             ax.set_facecolor(background_color)
@@ -643,105 +732,16 @@ class GraphsPage(QWidget):
                 chart_colors = [colors_palette(i) for i in range(num_metrics)]
 
             if self.current_graph_type == "Donut":
-                wedges, texts = ax.pie(
-                    sorted_metrics_series,
-                    autopct=None,
-                    startangle=90,
-                    wedgeprops=dict(width=0.4, edgecolor='w'),
-                    colors=chart_colors
-                )
-
-                # OEE değerini grafik merkezine yerleştir
-                ax.text(0, 0, f"OEE\n{oee_display_value}",
-                        horizontalalignment='center', verticalalignment='center',
-                        fontsize=24, fontweight='bold', color='black')
-
-                # Her dilimin üzerine sıra numarasını yaz
-                radius_text = 0.7  # Metinlerin dilimlerin ortasına ne kadar yakın olacağı
-                for i, wedge in enumerate(wedges):
-                    angle = (wedge.theta2 - wedge.theta1) / 2. + wedge.theta1
-                    x = radius_text * np.cos(np.deg2rad(angle))
-                    y = radius_text * np.sin(np.deg2rad(angle))
-
-                    r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
-                    luminance = (0.299 * r + 0.587 * g + 0.114 * b)
-                    text_color = 'white' if luminance < 0.5 else 'black'
-
-                    ax.text(x, y, str(i + 1),
-                            horizontalalignment='center',
-                            verticalalignment='center',
-                            fontsize=12,
-                            color=text_color,
-                            fontweight='bold')
-
-                # Metrik etiketlerini grafiğin solunda alt alta yerleştirme ve numaralandırma
-                label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
-                label_line_height = 0.05  # Approximate line height for each label
-
-                for i, (metric_name, metric_value) in enumerate(sorted_metrics_series.items()):
-                    label_text = (
-                        f"{i+1}. {metric_name}; "
-                        f"{int(metric_value // 3600):02d}:"
-                        f"{int((metric_value % 3600) // 60):02d}; "
-                        f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%"
-                    )
-                    y_pos = label_y_start - (i * label_line_height)
-                    bbox_props = dict(boxstyle="round,pad=0.3", fc=chart_colors[i], ec=chart_colors[i], lw=0.5)
-                    r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
-                    luminance = (0.299 * r + 0.587 * g + 0.114 * b)
-                    text_color = 'white' if luminance < 0.5 else 'black'
-
-                    fig.text(0.02,
-                             y_pos,
-                             label_text,
-                             horizontalalignment='left',
-                             verticalalignment='top',
-                             fontsize=10,
-                             bbox=bbox_props,
-                             transform=fig.transFigure,
-                             color=text_color
-                             )
-
-                ax.set_title("")  # Donut grafik için başlık yok
-                ax.axis("equal")  # Pie chart'ın daire şeklinde görünmesini sağlar
-                fig.tight_layout(rect=[0.25, 0.1, 1, 0.95])
-
+                GraphPlotter.create_donut_chart(ax, sorted_metrics_series, oee_display_value, chart_colors, fig)
             elif self.current_graph_type == "Bar":
-                # Bar grafiği çizimi
-                metrics = sorted_metrics_series.index.tolist()
-                values = sorted_metrics_series.values.tolist()
+                GraphPlotter.create_bar_chart(ax, sorted_metrics_series, oee_display_value, chart_colors)
 
-                y_pos = np.arange(len(metrics))
-
-                ax.barh(y_pos, values, color=chart_colors) # Yatay bar grafiği
-                ax.set_yticks(y_pos)
-                ax.set_yticklabels([f"{i+1}. {m}" for i, m in enumerate(metrics)], fontsize=10) # Numaralandırma ve etiketler
-                ax.invert_yaxis()  # En büyük değeri en üste getir
-
-                ax.set_xlabel("Duruş Süresi (Saniye)")
-                ax.set_title(f"Metrik Duruş Süreleri\nOEE: {oee_display_value}", fontsize=16, fontweight='bold') # OEE üstte
-
-                # Her barın üzerine değeri ve yüzdesini yaz
-                total_sum = sorted_metrics_series.sum()
-                for i, (value, metric_name) in enumerate(zip(values, metrics)):
-                    percentage = (value / total_sum) * 100 if total_sum > 0 else 0
-                    duration_hours = int(value // 3600)
-                    duration_minutes = int((value % 3600) // 60)
-                    # Sütunun sonuna hizala, metnin rengini ve boyutunu ayarla
-                    text_label = f"{duration_hours:02d}:{duration_minutes:02d} ({percentage:.0f}%)"
-                    ax.text(value, i, text_label,
-                            va='center', ha='left',  # value'ya göre sağa hizala
-                            fontsize=9, color='black',
-                            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle="round,pad=0.2")) # Beyaz kutu arkası
-
-                ax.set_xlim(left=0) # X ekseninin 0'dan başlamasını sağla
-                fig.tight_layout(rect=[0.1, 0.1, 0.95, 0.9]) # Etiketler için biraz boşluk bırak
 
             # TOPLAM DURUŞ hesapla ve göster (her iki grafik tipi için)
             total_duration_seconds = sorted_metrics_series.sum()
             total_duration_hours = int(total_duration_seconds // 3600)
             total_duration_minutes = int((total_duration_seconds % 3600) // 60)
-            total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
+            total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİDA"
 
             # TOPLAM DURUŞ metnini sol alt köşeye yerleştir
             fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
@@ -753,6 +753,39 @@ class GraphsPage(QWidget):
 
         self.display_current_page_graphs()
         self.btn_save_image.setEnabled(True)
+
+    def enter_page(self) -> None:
+        """Bu sayfaya girildiğinde grafikleri yeniden oluşturma sürecini başlatır."""
+        self.figures_data.clear()  # Önceki grafikleri temizle
+        self.clear_canvases()      # Tuvali temizle
+        self.progress.setValue(0)  # İlerleme çubuğunu sıfırla
+        self.btn_save_image.setEnabled(False) # Kaydetme butonunu devre dışı bırak
+        self.lbl_chart_info.setText("Grafikler oluşturuluyor...") # Bilgi metnini güncelle
+
+        # Worker zaten çalışıyorsa, durdur ve yeni bir tane başlat
+        if self.worker and self.worker.isRunning():
+            self.worker.quit()
+            self.worker.wait()
+
+        self.worker = GraphWorker(
+            df=self.main_window.df,
+            grouping_col_name=self.main_window.grouping_col_name,
+            grouped_col_name=self.main_window.grouped_col_name,
+            grouped_values=self.main_window.grouped_values,
+            metric_cols=self.main_window.selected_metrics, # Sadece seçili metrikleri kullan
+            oee_col_name=self.main_window.oee_col_name,
+            selected_grouping_val=self.main_window.selected_grouping_val
+        )
+        self.worker.finished.connect(self.on_results)
+        self.worker.progress.connect(self.progress.setValue)
+        self.worker.error.connect(self.on_error)
+        self.worker.start()
+
+    def on_error(self, message: str) -> None:
+        """GraphWorker'dan gelen hata mesajını gösterir."""
+        QMessageBox.critical(self, "Hata", message)
+        self.progress.setValue(0) # Hata durumunda ilerlemeyi sıfırla
+        self.lbl_chart_info.setText("Grafik oluşturma hatası.")
 
     def clear_canvases(self) -> None:
         """Mevcut grafik tuvallerini temizler."""
@@ -782,7 +815,7 @@ class GraphsPage(QWidget):
             self.btn_prev.setEnabled(False)
             self.btn_next.setEnabled(False)
             self.update_page_label()
-            self.lbl_chart_info.setText("")
+            self.lbl_chart_info.setText("Gösterilecek grafik bulunamadı.")
             return
 
         start_index = self.current_page * GRAPHS_PER_PAGE
