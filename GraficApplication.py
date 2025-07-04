@@ -520,12 +520,12 @@ class GraphsPage(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.canvas_holder = QWidget()
-        # Grafiklerin sağına konumlandırılması için QHBoxLayout kullanıldı
+        # Grafiklerin ortalanması için QHBoxLayout kullanıldı
         self.canvas_centered_layout = QHBoxLayout(self.canvas_holder)
         self.vbox_canvases = QVBoxLayout()
-        self.canvas_centered_layout.addStretch(1)  # Stretch on the left to push graphs to the right
+        self.canvas_centered_layout.addStretch(1)  # Sol boşluk
         self.canvas_centered_layout.addLayout(self.vbox_canvases)
-        # self.canvas_centered_layout.addStretch(1) # Removed to align graphs to the right
+        self.canvas_centered_layout.addStretch(1)  # Sağ boşluk eklendi (ortalamak için)
 
         self.scroll.setWidget(self.canvas_holder)
         main_layout.addWidget(self.scroll)
