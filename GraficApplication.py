@@ -500,9 +500,10 @@ class GraphsPage(QWidget):
         super().__init__()
         self.main_window = main_window
         self.worker: GraphWorker | None = None
-        self.init_ui()
-        self.figures_data: List[Tuple[str, Figure]] = []  # Oluşturulan figürleri tutar (ürün adı, figür objesi)
+        self.figures_data: List[Tuple[str, Figure, str]] = []  # (Ürün adı, figür objesi, OEE değeri)
         self.current_page = 0  # Mevcut sayfa numarası
+        self.current_graph_type = "Donut"  # Varsayılan grafik tipi
+        self.init_ui()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -524,10 +525,17 @@ class GraphsPage(QWidget):
         self.btn_back.clicked.connect(lambda: self.main_window.goto_page(1))
         nav_top.addWidget(self.btn_back)
 
-        self.lbl_chart_info = QLabel("")  # Added for displaying date and product info
+        self.lbl_chart_info = QLabel("")
         self.lbl_chart_info.setAlignment(Qt.AlignCenter)
         self.lbl_chart_info.setStyleSheet("font-weight: bold; font-size: 12pt;")
         nav_top.addWidget(self.lbl_chart_info)
+
+        # Grafik tipi seçimi için ComboBox
+        self.cmb_graph_type = QComboBox()
+        self.cmb_graph_type.addItems(["Donut", "Bar"])
+        self.cmb_graph_type.setCurrentText(self.current_graph_type) # Varsayılanı ayarla
+        self.cmb_graph_type.currentIndexChanged.connect(self.on_graph_type_changed)
+        nav_top.addWidget(self.cmb_graph_type)
 
         nav_top.addStretch(1)
         self.lbl_page = QLabel("Sayfa 0 / 0")
@@ -537,7 +545,7 @@ class GraphsPage(QWidget):
 
         self.btn_save_image = QPushButton("Grafiği Kaydet (PNG/JPEG)")
         self.btn_save_image.clicked.connect(self.save_single_graph_as_image)
-        self.btn_save_image.setEnabled(False)  # Başlangıçta devre dışı
+        self.btn_save_image.setEnabled(False)
         nav_top.addWidget(self.btn_save_image)
         main_layout.addLayout(nav_top)
 
@@ -545,12 +553,11 @@ class GraphsPage(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.canvas_holder = QWidget()
-        # Grafiklerin ortalanması için QHBoxLayout kullanıldı
         self.canvas_centered_layout = QHBoxLayout(self.canvas_holder)
         self.vbox_canvases = QVBoxLayout()
-        self.canvas_centered_layout.addStretch(1)  # Sol boşluk
+        self.canvas_centered_layout.addStretch(1)
         self.canvas_centered_layout.addLayout(self.vbox_canvases)
-        self.canvas_centered_layout.addStretch(1)  # Sağ boşluk eklendi (ortalamak için)
+        self.canvas_centered_layout.addStretch(1)
 
         self.scroll.setWidget(self.canvas_holder)
         main_layout.addWidget(self.scroll)
@@ -560,29 +567,37 @@ class GraphsPage(QWidget):
         nav_bottom.addStretch(1)
         self.btn_prev = QPushButton("← Önceki Sayfa")
         self.btn_prev.clicked.connect(self.prev_page)
-        self.btn_prev.setEnabled(False)  # Başlangıçta devre dışı
+        self.btn_prev.setEnabled(False)
         nav_bottom.addWidget(self.btn_prev)
 
         self.btn_next = QPushButton("Sonraki Sayfa →")
         self.btn_next.clicked.connect(self.next_page)
-        self.btn_next.setEnabled(False)  # Başlangıçta devre dışı
+        self.btn_next.setEnabled(False)
         nav_bottom.addWidget(self.btn_next)
         nav_bottom.addStretch(1)
         main_layout.addLayout(nav_bottom)
 
+    def on_graph_type_changed(self, index: int) -> None:
+        """Grafik tipi değiştiğinde çağrılır ve grafikleri yeniden çizer."""
+        self.current_graph_type = self.cmb_graph_type.currentText()
+        # Sadece mevcut sayfanın grafiğini yeniden çizmek için mevcut veriyi kullanabiliriz.
+        # Ancak, mevcut figures_data'daki tüm figürleri yeniden oluşturmak daha sağlam olur.
+        # Bu yüzden enter_page'i yeniden çağırarak tüm grafiklerin yeni tipe göre oluşturulmasını sağlarız.
+        self.enter_page()
+
+
     def enter_page(self) -> None:
         """Bu sayfaya geçildiğinde grafik oluşturma işlemini başlatır."""
-        self.clear_canvases()  # Önceki grafikleri temizle
-        self.figures_data.clear()  # Figür verilerini temizle
-        self.current_page = 0  # Sayfayı sıfırla
-        self.update_page_label()  # Sayfa etiketini güncelle
-        self.progress.setValue(0)  # İlerleme çubuğunu sıfırla
-        self.btn_save_image.setEnabled(False)  # Kaydet butonunu devre dışı bırak
-        self.lbl_chart_info.setText("")  # Clear chart info label
+        self.clear_canvases()
+        self.figures_data.clear()
+        self.current_page = 0
+        self.update_page_label()
+        self.progress.setValue(0)
+        self.btn_save_image.setEnabled(False)
+        self.lbl_chart_info.setText("")
 
         df = self.main_window.df
 
-        # GraphWorker'ı başlat
         self.worker = GraphWorker(
             df=df,
             grouping_col_name=self.main_window.grouping_col_name,
@@ -592,121 +607,137 @@ class GraphsPage(QWidget):
             oee_col_name=self.main_window.oee_col_name,
             selected_grouping_val=self.main_window.selected_grouping_val
         )
-        self.worker.progress.connect(self.progress.setValue)  # İlerleme çubuğunu güncelle
-        self.worker.finished.connect(self.on_results)  # İşlem bitince sonuçları al
-        self.worker.error.connect(lambda m: QMessageBox.critical(self, "Hata", m))  # Hata durumunda mesaj göster
-        self.worker.start()  # İş parçacığını başlat
+        self.worker.progress.connect(self.progress.setValue)
+        self.worker.finished.connect(self.on_results)
+        self.worker.error.connect(lambda m: QMessageBox.critical(self, "Hata", m))
+        self.worker.start()
 
     def on_results(self, results: List[Tuple[str, pd.Series, str]]) -> None:
         """GraphWorker'dan gelen sonuçları işler ve grafikleri oluşturur."""
-        self.progress.setValue(100)  # İlerleme çubuğunu tamamla
+        self.progress.setValue(100)
 
         if not results:
             QMessageBox.information(self, "Veri yok", "Grafik oluşturulamadı. Seçilen kriterlere göre veri bulunamadı.")
             self.btn_save_image.setEnabled(False)
             return
 
-        # Figure size for 700x460 pixels at 100 DPI
         fig_width_inches = 700 / 100
         fig_height_inches = 460 / 100
 
         for grouped_val, metric_sums, oee_display_value in results:
-            fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), subplot_kw=dict(aspect="equal"))
-
-            # Grafik arka plan rengi
+            fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches)) # subplot_kw aspect="equal" kaldırıldı
             background_color = 'white'
             fig.patch.set_facecolor(background_color)
             ax.set_facecolor(background_color)
 
-            # Metrikleri son değerlerine göre büyükten küçüğe sırala
-            # Bu kısım zaten GraphWorker içinde yapılıyor, ancak burada tekrar sıralamak garantiler.
-            # `metric_sums` zaten GraphWorker'dan sıralı gelmediği için burada sıralamayı yapmalıyız.
             if not metric_sums.empty:
-                # Metrikleri değerlerine göre sırala (büyükten küçüğe)
                 sorted_metrics_series = metric_sums.sort_values(ascending=False)
             else:
-                sorted_metrics_series = pd.Series() # Boşsa boş bir seri döndür
+                sorted_metrics_series = pd.Series()
 
-            # Dinamik renk paleti oluştur
             num_metrics = len(sorted_metrics_series)
-
-            # Eğer sadece bir metrik varsa ve bu "HAT ÇALIŞMADI" ise özel rengi kullan
             if num_metrics == 1 and sorted_metrics_series.index[0] == 'HAT ÇALIŞMADI':
-                chart_colors = ['#FF9841']  # Resim1.png'deki turuncu/şeftali rengi
+                chart_colors = ['#FF9841']
             else:
                 colors_palette = plt.cm.get_cmap('tab20', num_metrics)
                 chart_colors = [colors_palette(i) for i in range(num_metrics)]
 
-            wedges, texts = ax.pie(
-                sorted_metrics_series,
-                autopct=None,  # Yüzdeleri direk pasta üzerinde gösterme
-                startangle=90,
-                wedgeprops=dict(width=0.4, edgecolor='w'),  # Donut grafik için
-                colors=chart_colors
-            )
-
-            # OEE değerini grafik merkezine yerleştir
-            ax.text(0, 0, f"OEE\n{oee_display_value}",
-                    horizontalalignment='center', verticalalignment='center',
-                    fontsize=24, fontweight='bold', color='black')
-
-            # Her dilimin üzerine sıra numarasını yaz
-            radius_text = 0.7  # Metinlerin dilimlerin ortasına ne kadar yakın olacağı
-            for i, wedge in enumerate(wedges):
-                angle = (wedge.theta2 - wedge.theta1) / 2. + wedge.theta1
-                x = radius_text * np.cos(np.deg2rad(angle))
-                y = radius_text * np.sin(np.deg2rad(angle))
-
-                # Metin rengini, arka plan rengiyle kontrast oluşturacak şekilde ayarla
-                r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
-                luminance = (0.299 * r + 0.587 * g + 0.114 * b)
-                text_color = 'white' if luminance < 0.5 else 'black'
-
-                ax.text(x, y, str(i + 1),
-                        horizontalalignment='center',
-                        verticalalignment='center',
-                        fontsize=12,
-                        color=text_color,
-                        fontweight='bold')
-
-
-            # Metrik etiketlerini grafiğin solunda alt alta yerleştirme ve numaralandırma
-            label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
-            label_line_height = 0.05  # Approximate line height for each label
-
-            for i, (metric_name, metric_value) in enumerate(sorted_metrics_series.items()):
-                label_text = (
-                    f"{i+1}. {metric_name}; " # Numaralandırma eklendi
-                    f"{int(metric_value // 3600):02d}:"
-                    f"{int((metric_value % 3600) // 60):02d}; "
-                    f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%" # Toplamın sorted_metrics_series.sum() olarak güncellendi
+            if self.current_graph_type == "Donut":
+                wedges, texts = ax.pie(
+                    sorted_metrics_series,
+                    autopct=None,
+                    startangle=90,
+                    wedgeprops=dict(width=0.4, edgecolor='w'),
+                    colors=chart_colors
                 )
 
-                # Use figure coordinates for placement
-                y_pos = label_y_start - (i * label_line_height)
+                # OEE değerini grafik merkezine yerleştir
+                ax.text(0, 0, f"OEE\n{oee_display_value}",
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=24, fontweight='bold', color='black')
 
-                # Değişiklik 1: fc (fill color) chart_colors[i] olarak ayarlandı
-                bbox_props = dict(boxstyle="round,pad=0.3", fc=chart_colors[i], ec=chart_colors[i], lw=0.5)
+                # Her dilimin üzerine sıra numarasını yaz
+                radius_text = 0.7  # Metinlerin dilimlerin ortasına ne kadar yakın olacağı
+                for i, wedge in enumerate(wedges):
+                    angle = (wedge.theta2 - wedge.theta1) / 2. + wedge.theta1
+                    x = radius_text * np.cos(np.deg2rad(angle))
+                    y = radius_text * np.sin(np.deg2rad(angle))
 
-                # Metin rengini, arka plan rengiyle kontrast oluşturacak şekilde ayarla
-                # Koyu renkler için beyaz, açık renkler için siyah daha iyi okunur
-                # Basit bir eşikleme (luminance) ile kontrol edilebilir
-                r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
-                luminance = (0.299 * r + 0.587 * g + 0.114 * b)
-                text_color = 'white' if luminance < 0.5 else 'black'
+                    r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
+                    luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+                    text_color = 'white' if luminance < 0.5 else 'black'
 
-                fig.text(0.02,  # X position for left alignment (figure coordinates)
-                         y_pos,
-                         label_text,
-                         horizontalalignment='left',
-                         verticalalignment='top',
-                         fontsize=10,
-                         bbox=bbox_props,
-                         transform=fig.transFigure,
-                         color=text_color  # Set label text color dynamically
-                         )
+                    ax.text(x, y, str(i + 1),
+                            horizontalalignment='center',
+                            verticalalignment='center',
+                            fontsize=12,
+                            color=text_color,
+                            fontweight='bold')
 
-            # TOPLAM DURUŞ hesapla ve göster
+                # Metrik etiketlerini grafiğin solunda alt alta yerleştirme ve numaralandırma
+                label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
+                label_line_height = 0.05  # Approximate line height for each label
+
+                for i, (metric_name, metric_value) in enumerate(sorted_metrics_series.items()):
+                    label_text = (
+                        f"{i+1}. {metric_name}; "
+                        f"{int(metric_value // 3600):02d}:"
+                        f"{int((metric_value % 3600) // 60):02d}; "
+                        f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%"
+                    )
+                    y_pos = label_y_start - (i * label_line_height)
+                    bbox_props = dict(boxstyle="round,pad=0.3", fc=chart_colors[i], ec=chart_colors[i], lw=0.5)
+                    r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
+                    luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+                    text_color = 'white' if luminance < 0.5 else 'black'
+
+                    fig.text(0.02,
+                             y_pos,
+                             label_text,
+                             horizontalalignment='left',
+                             verticalalignment='top',
+                             fontsize=10,
+                             bbox=bbox_props,
+                             transform=fig.transFigure,
+                             color=text_color
+                             )
+
+                ax.set_title("")  # Donut grafik için başlık yok
+                ax.axis("equal")  # Pie chart'ın daire şeklinde görünmesini sağlar
+                fig.tight_layout(rect=[0.25, 0.1, 1, 0.95])
+
+            elif self.current_graph_type == "Bar":
+                # Bar grafiği çizimi
+                metrics = sorted_metrics_series.index.tolist()
+                values = sorted_metrics_series.values.tolist()
+
+                y_pos = np.arange(len(metrics))
+
+                ax.barh(y_pos, values, color=chart_colors) # Yatay bar grafiği
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels([f"{i+1}. {m}" for i, m in enumerate(metrics)], fontsize=10) # Numaralandırma ve etiketler
+                ax.invert_yaxis()  # En büyük değeri en üste getir
+
+                ax.set_xlabel("Duruş Süresi (Saniye)")
+                ax.set_title(f"Metrik Duruş Süreleri\nOEE: {oee_display_value}", fontsize=16, fontweight='bold') # OEE üstte
+
+                # Her barın üzerine değeri ve yüzdesini yaz
+                total_sum = sorted_metrics_series.sum()
+                for i, (value, metric_name) in enumerate(zip(values, metrics)):
+                    percentage = (value / total_sum) * 100 if total_sum > 0 else 0
+                    duration_hours = int(value // 3600)
+                    duration_minutes = int((value % 3600) // 60)
+                    # Sütunun sonuna hizala, metnin rengini ve boyutunu ayarla
+                    text_label = f"{duration_hours:02d}:{duration_minutes:02d} ({percentage:.0f}%)"
+                    ax.text(value, i, text_label,
+                            va='center', ha='left',  # value'ya göre sağa hizala
+                            fontsize=9, color='black',
+                            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle="round,pad=0.2")) # Beyaz kutu arkası
+
+                ax.set_xlim(left=0) # X ekseninin 0'dan başlamasını sağla
+                fig.tight_layout(rect=[0.1, 0.1, 0.95, 0.9]) # Etiketler için biraz boşluk bırak
+
+            # TOPLAM DURUŞ hesapla ve göster (her iki grafik tipi için)
             total_duration_seconds = sorted_metrics_series.sum()
             total_duration_hours = int(total_duration_seconds // 3600)
             total_duration_minutes = int((total_duration_seconds % 3600) // 60)
@@ -716,15 +747,9 @@ class GraphsPage(QWidget):
             fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
                      fontsize=14, fontweight='bold', verticalalignment='bottom')
 
-            ax.set_title("")  # Üstteki başlığı kaldır
-            ax.axis("equal")  # Pie chart'ın daire şeklinde görünmesini sağlar
 
-            # Değişiklik 2: rect parametresi ile grafiğin konumunu sağa kaydır
-            # Sol boşluğu artırarak grafiği sağa iter
-            fig.tight_layout(rect=[0.25, 0.1, 1, 0.95])  # Left boundary moved from 0 to 0.25
-
-            self.figures_data.append((grouped_val, fig))
-            plt.close(fig)  # Bellek sızıntısını önlemek için figürü kapat
+            self.figures_data.append((grouped_val, fig, oee_display_value)) # OEE değeri de figures_data'da tutulacak
+            plt.close(fig)
 
         self.display_current_page_graphs()
         self.btn_save_image.setEnabled(True)
@@ -757,7 +782,7 @@ class GraphsPage(QWidget):
             self.btn_prev.setEnabled(False)
             self.btn_next.setEnabled(False)
             self.update_page_label()
-            self.lbl_chart_info.setText("")  # Clear info when no graphs
+            self.lbl_chart_info.setText("")
             return
 
         start_index = self.current_page * GRAPHS_PER_PAGE
@@ -765,11 +790,10 @@ class GraphsPage(QWidget):
 
         graphs_to_display = self.figures_data[start_index:end_index]
 
-        for grouped_val, fig in graphs_to_display:
+        for grouped_val, fig, oee_display_value in graphs_to_display:
             canvas = FigureCanvas(fig)
-            canvas.setFixedSize(700, 460)  # Set fixed size for the canvas to match 700x460 pixels
+            canvas.setFixedSize(700, 460)
             self.vbox_canvases.addWidget(canvas)
-            # Update the label with current product and date
             self.lbl_chart_info.setText(f"{self.main_window.selected_grouping_val} - {grouped_val}")
 
         self.update_page_label()
@@ -809,24 +833,20 @@ class GraphsPage(QWidget):
             QMessageBox.warning(self, "Geçersiz Sayfa", "Mevcut sayfada kaydedilecek bir grafik yok.")
             return
 
-        # Mevcut sayfadaki ilk (veya tek) grafiği al
         fig_index_on_page = self.current_page * GRAPHS_PER_PAGE
         if fig_index_on_page < len(self.figures_data):
-            grouped_val, fig = self.figures_data[fig_index_on_page]
+            grouped_val, fig, _ = self.figures_data[fig_index_on_page]
         else:
             QMessageBox.warning(self, "Kaydedilecek Grafik Yok", "Mevcut sayfada kaydedilecek bir grafik yok.")
             return
 
-        default_filename = f"grafik_{grouped_val}_{self.main_window.selected_grouping_val}.png".replace(" ",
-                                                                                                        "_").replace(
-            "/", "-")
+        default_filename = f"grafik_{grouped_val}_{self.main_window.selected_grouping_val}_{self.current_graph_type}.png".replace(" ", "_").replace("/", "-")
         filepath, _ = QFileDialog.getSaveFileName(
             self, "Grafiği Kaydet", default_filename, "PNG (*.png);;JPEG (*.jpeg);;JPG (*.jpg)"
         )
 
         if filepath:
             try:
-                # Save with the specified dimensions (700x460 pixels)
                 fig.savefig(filepath, dpi=100, bbox_inches='tight', facecolor=fig.get_facecolor())
                 QMessageBox.information(self, "Kaydedildi", f"Grafik başarıyla kaydedildi: {Path(filepath).name}")
                 logging.info("Grafik kaydedildi: %s", filepath)
