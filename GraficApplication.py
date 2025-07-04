@@ -224,12 +224,13 @@ class GraphPlotter:
             fig: plt.Figure
     ) -> None:
         """Donut grafiği oluşturur."""
+        # Donut grafiğini tüm metriklerle oluştur
         wedges, texts = ax.pie(
-            sorted_metrics_series,
-            autopct=None,  # autopct'i None yaparak sayıları kaldır
+            sorted_metrics_series,  # Tüm metrikler burada kullanılıyor
+            autopct=None,
             startangle=90,
             wedgeprops=dict(width=0.4, edgecolor='w'),
-            colors=chart_colors
+            colors=chart_colors[:len(sorted_metrics_series)] # Tüm metrikler için renkleri kullan
         )
 
         # OEE değerini grafik merkezine yerleştir
@@ -238,23 +239,31 @@ class GraphPlotter:
                 fontsize=24, fontweight='bold', color='black')
 
         # Metrik etiketlerini grafiğin solunda alt alta yerleştirme ve numaralandırma
-        label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
+        # "Toplam Duruş"un y koordinatının üzerinde konumlandırma
+        # Figür yüksekliği 460 piksel (4.6 inç * 100 DPI) olduğu için,
+        # 30 piksel = 30 / 460 = ~0.065 figür koordinatı.
+        # Mevcut label_y_start 0.25 idi, 30 piksel yukarı taşıyalım.
+        label_y_start = 0.25 + (30 / (fig.get_size_inches()[1] * fig.dpi)) # Yaklaşık 0.315 -> 0.32
         label_line_height = 0.05  # Approximate line height for each label
 
-        for i, (metric_name, metric_value) in enumerate(sorted_metrics_series.items()):
+        # Yalnızca ilk 3 metriğin etiketlerini oluştur
+        top_3_metrics = sorted_metrics_series.head(3)
+        top_3_colors = chart_colors[:len(top_3_metrics)] # İlk 3 metrik için renkleri al
+
+        for i, (metric_name, metric_value) in enumerate(top_3_metrics.items()):
             label_text = (
                 f"{i + 1}. {metric_name}; "  # Numaralandırma eklendi
                 f"{int(metric_value // 3600):02d}:"
                 f"{int((metric_value % 3600) // 60):02d}; "
-                f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%"
+                f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%" # Yüzdeyi genel toplama göre hesapla
             )
             y_pos = label_y_start - (i * label_line_height)
-            bbox_props = dict(boxstyle="round,pad=0.3", fc=chart_colors[i], ec=chart_colors[i], lw=0.5)
-            r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
+            bbox_props = dict(boxstyle="round,pad=0.3", fc=top_3_colors[i], ec=top_3_colors[i], lw=0.5)
+            r, g, b, _ = matplotlib.colors.to_rgba(top_3_colors[i])
             luminance = (0.299 * r + 0.587 * g + 0.114 * b)
             text_color = 'white' if luminance < 0.5 else 'black'
 
-            fig.text(0.02,
+            fig.text(0.02, # X koordinatını sola kaydır
                      y_pos,
                      label_text,
                      horizontalalignment='left',
@@ -744,7 +753,7 @@ class GraphsPage(QWidget):
             total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİDA"
 
             # TOPLAM DURUŞ metnini sol alt köşeye yerleştir
-            fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
+            fig.text(0.01, 0.05, total_duration_text, transform=fig.transFigure, # X koordinatı 0.01 olarak değiştirildi
                      fontsize=14, fontweight='bold', verticalalignment='bottom')
 
 
@@ -844,13 +853,13 @@ class GraphsPage(QWidget):
         self.btn_next.setEnabled(self.current_page < total_pages - 1)
 
     def prev_page(self) -> None:
-        """Bir önceki sayfaya geçer."""
+        """Önceki sayfaya geçer."""
         if self.current_page > 0:
             self.current_page -= 1
             self.display_current_page_graphs()
 
     def next_page(self) -> None:
-        """Bir sonraki sayfaya geçer."""
+        """Sonraki sayfaya geçer."""
         total_pages = (len(self.figures_data) + GRAPHS_PER_PAGE - 1) // GRAPHS_PER_PAGE if self.figures_data else 0
         if self.current_page < total_pages - 1:
             self.current_page += 1
