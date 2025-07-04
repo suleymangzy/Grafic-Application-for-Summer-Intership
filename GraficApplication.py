@@ -589,12 +589,12 @@ class GraphsPage(QWidget):
             fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), subplot_kw=dict(aspect="equal"))
 
             # Grafik arka plan rengi
-            background_color = 'white'  # Açık gri
+            background_color = 'white'
             fig.patch.set_facecolor(background_color)
             ax.set_facecolor(background_color)
 
             # Dinamik renk paleti oluştur
-            num_metrics = len(metric_sums)  # Directly use the number of effective metrics
+            num_metrics = len(metric_sums)
 
             # Eğer sadece bir metrik varsa ve bu "HAT ÇALIŞMADI" ise özel rengi kullan
             if num_metrics == 1 and metric_sums.index[0] == 'HAT ÇALIŞMADI':
@@ -617,8 +617,6 @@ class GraphsPage(QWidget):
                     fontsize=24, fontweight='bold', color='black')
 
             # Metrik etiketlerini grafiğin solunda alt alta yerleştirme
-            # Calculate an appropriate starting Y position for stacked labels on the left
-            # This depends on figure height and font size. Start near top left.
             label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
             label_line_height = 0.05  # Approximate line height for each label
 
@@ -633,8 +631,15 @@ class GraphsPage(QWidget):
                 # Use figure coordinates for placement
                 y_pos = label_y_start - (i * label_line_height)
 
-                bbox_props = dict(boxstyle="round,pad=0.3", fc="white", ec=chart_colors[i],
-                                  lw=0.5)  # Set edge color to match metric color
+                # Değişiklik 1: fc (fill color) chart_colors[i] olarak ayarlandı
+                bbox_props = dict(boxstyle="round,pad=0.3", fc=chart_colors[i], ec=chart_colors[i], lw=0.5)
+
+                # Metin rengini, arka plan rengiyle kontrast oluşturacak şekilde ayarla
+                # Koyu renkler için beyaz, açık renkler için siyah daha iyi okunur
+                # Basit bir eşikleme (luminance) ile kontrol edilebilir
+                r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
+                luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+                text_color = 'white' if luminance < 0.5 else 'black'
 
                 fig.text(0.02,  # X position for left alignment (figure coordinates)
                          y_pos,
@@ -644,14 +649,13 @@ class GraphsPage(QWidget):
                          fontsize=10,
                          bbox=bbox_props,
                          transform=fig.transFigure,
-                         color='dimgray'  # Set label text color to dimgray
+                         color=text_color  # Set label text color dynamically
                          )
 
             # TOPLAM DURUŞ hesapla ve göster
             total_duration_seconds = metric_sums.sum()
             total_duration_hours = int(total_duration_seconds // 3600)
             total_duration_minutes = int((total_duration_seconds % 3600) // 60)
-            # Modified to only show total duration, date and product moved to top menu
             total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
 
             # TOPLAM DURUŞ metnini sol alt köşeye yerleştir
@@ -660,8 +664,10 @@ class GraphsPage(QWidget):
 
             ax.set_title("")  # Üstteki başlığı kaldır
             ax.axis("equal")  # Pie chart'ın daire şeklinde görünmesini sağlar
-            # Adjusted rect to make more room for labels and bottom text
-            fig.tight_layout(rect=[0, 0.1, 1, 0.95])
+
+            # Değişiklik 2: rect parametresi ile grafiğin konumunu sağa kaydır
+            # Sol boşluğu artırarak grafiği sağa iter
+            fig.tight_layout(rect=[0.25, 0.1, 1, 0.95])  # Left boundary moved from 0 to 0.25
 
             self.figures_data.append((grouped_val, fig))
             plt.close(fig)  # Bellek sızıntısını önlemek için figürü kapat
