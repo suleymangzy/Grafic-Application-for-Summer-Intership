@@ -9,7 +9,7 @@ import numpy as np
 
 import matplotlib
 
-matplotlib.use("Agg")
+# matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -96,9 +96,8 @@ class GraphWorker(QThread):
             grouped_col_name: str,
             grouped_values: List[str],
             metric_cols: List[str],
-            bp_col_name: str | None,
             oee_col_name: str | None,
-            selected_grouping_val: str # Add selected_grouping_val
+            selected_grouping_val: str
     ) -> None:
         super().__init__()
         self.df = df.copy()
@@ -106,15 +105,14 @@ class GraphWorker(QThread):
         self.grouped_col_name = grouped_col_name
         self.grouped_values = grouped_values
         self.metric_cols = metric_cols
-        self.bp_col_name = bp_col_name
         self.oee_col_name = oee_col_name
-        self.selected_grouping_val = selected_grouping_val # Store selected_grouping_val
+        self.selected_grouping_val = selected_grouping_val
 
     def run(self) -> None:
         try:
-            results: List[Tuple[str, pd.Series, float, str]] = []
+            results: List[Tuple[str, pd.Series, str]] = []
             total = len(self.grouped_values)
-            all_cols_to_process = list(set(self.metric_cols + ([self.bp_col_name] if self.bp_col_name else [])))
+            all_cols_to_process = list(set(self.metric_cols))
             df_processed_times = self.df.copy()
 
             for col in all_cols_to_process:
@@ -122,7 +120,6 @@ class GraphWorker(QThread):
                     df_processed_times[col] = seconds_from_timedelta(df_processed_times[col])
 
             for i, current_grouped_val in enumerate(self.grouped_values, 1):
-                # Filter by both grouping_col_name and grouped_col_name
                 subset_df_for_chart = df_processed_times[
                     (df_processed_times[self.grouping_col_name].astype(str) == self.selected_grouping_val) &
                     (df_processed_times[self.grouped_col_name].astype(str) == current_grouped_val)
@@ -130,10 +127,6 @@ class GraphWorker(QThread):
 
                 sums = subset_df_for_chart[self.metric_cols].sum()
                 sums = sums[sums > 0]
-
-                bp_total_seconds = 0.0
-                if self.bp_col_name and self.bp_col_name in subset_df_for_chart.columns:
-                    bp_total_seconds = subset_df_for_chart[self.bp_col_name].sum()
 
                 oee_display_value = "0%"
                 if self.oee_col_name and self.oee_col_name in self.df.columns:
@@ -164,7 +157,7 @@ class GraphWorker(QThread):
                                 oee_display_value = "0%"
 
                 if not sums.empty:
-                    results.append((current_grouped_val, sums, bp_total_seconds, oee_display_value))
+                    results.append((current_grouped_val, sums, oee_display_value))
                 self.progress.emit(int(i / total * 100))
 
             self.finished.emit(results)
@@ -411,7 +404,7 @@ class DataSelectionPage(QWidget):
 
     def go_next(self) -> None:
         self.main_window.grouped_values = [i.text() for i in self.lst_grouped.selectedItems()]
-        self.main_window.selected_grouping_val = self.cmb_grouping.currentText() # Store selected grouping value
+        self.main_window.selected_grouping_val = self.cmb_grouping.currentText()
 
         if not self.main_window.grouped_values or not self.main_window.selected_metrics:
             QMessageBox.warning(self, "Seçim Eksik", "Lütfen en az bir gruplanan değişken ve bir metrik seçin.")
@@ -494,69 +487,73 @@ class GraphsPage(QWidget):
             grouped_col_name=self.main_window.grouped_col_name,
             grouped_values=self.main_window.grouped_values,
             metric_cols=self.main_window.selected_metrics,
-            bp_col_name=self.main_window.f_col_name,  # Use f_col_name for BP
             oee_col_name=self.main_window.oee_col_name,
-            selected_grouping_val=self.main_window.selected_grouping_val # Pass selected grouping value
+            selected_grouping_val=self.main_window.selected_grouping_val
         )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.finished.connect(self.on_results)
         self.worker.error.connect(lambda m: QMessageBox.critical(self, "Hata", m))
         self.worker.start()
 
-    def on_results(self, results: List[Tuple[str, pd.Series, float, str]]) -> None:
+    def on_results(self, results: List[Tuple[str, pd.Series, str]]) -> None:
         self.progress.setValue(100)
         if not results:
             QMessageBox.information(self, "Veri yok", "Grafik oluşturulamadı. Seçilen kriterlere göre veri bulunamadı.")
             return
 
-        colors_palette = plt.cm.get_cmap('Paired', len(self.main_window.selected_metrics))
-        metric_colors = {metric: colors_palette(i) for i, metric in enumerate(self.main_window.selected_metrics)}
+        # Define a light gray background color for the plot
+        background_color = '#E6E6E6' # Light gray
 
-        for grouped_val, metric_sums, bp_total_seconds, oee_display_value in results:
-            fig = Figure(figsize=(8, 8), dpi=100)
-            ax = fig.add_subplot(111)
+        for grouped_val, metric_sums, oee_display_value in results:
+            fig = Figure(figsize=(8.81, 5.84), dpi=100) # Set figure size to 881x584 pixels
+            ax = fig.add_subplot(111, facecolor=background_color) # Set background color for the axes
 
-            wedges, texts, autotexts = ax.pie(
+            wedges, texts = ax.pie(
                 metric_sums.values,
-                labels=[f"{label}; {int(value // 3600):02d}:{int((value % 3600) // 60):02d}; {p:.0f}%"
-                        for label, value, p in zip(metric_sums.index, metric_sums.values, metric_sums.values / metric_sums.sum() * 100)],
-                autopct="",
+                autopct=None, # Remove default autopct
                 startangle=90,
                 counterclock=False,
-                colors=[metric_colors[m] for m in metric_sums.index],
                 wedgeprops=dict(width=0.4, edgecolor='w')
             )
+
+            # Calculate total duration for "TOPLAM DURUŞ"
+            total_duration_seconds = metric_sums.sum()
+            total_duration_hours = int(total_duration_seconds // 3600)
+            total_duration_minutes = int((total_duration_seconds % 3600) // 60)
+            total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
+
+            # Position "TOPLAM DURUŞ" text
+            fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
+                     fontsize=14, fontweight='bold', verticalalignment='bottom')
 
             ax.text(0, 0, f"OEE\n{oee_display_value}",
                     horizontalalignment='center', verticalalignment='center',
                     fontsize=24, fontweight='bold', color='black')
 
-            current_date = self.main_window.selected_grouping_val
-            title_text = f"{current_date}\n{self.main_window.grouped_col_name.upper()}: {grouped_val.upper()}"
-
-            ax.set_title(title_text, fontweight="bold", fontsize=16, pad=20)
-
-            for text, autotext in zip(texts, autotexts):
-                text.set_fontsize(10)
-                text.set_color('black')
-                autotext.set_visible(False)
-
             ax.axis("equal")
             fig.tight_layout(rect=[0, 0, 1, 0.95])
+            fig.patch.set_facecolor(background_color) # Set figure background color
 
-            total_duration_seconds = metric_sums.sum()
-            total_duration_hours = int(total_duration_seconds // 3600)
-            total_duration_minutes = int((total_duration_seconds % 3600) // 60)
-            total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
-            fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
-                     fontsize=14, fontweight='bold', verticalalignment='bottom')
+            # Custom label placement with connecting lines
+            bbox_props = dict(boxstyle="round,pad=0.3", fc="w", ec="0.5", lw=0.5)
+            kw = dict(arrowprops=dict(arrowstyle="-"), bbox=bbox_props, zorder=0, va="center")
 
-            bp_hours = int(bp_total_seconds // 3600)
-            bp_minutes = int((bp_total_seconds % 3600) // 60)
-            bp_seconds = int(bp_total_seconds % 60)
-            bp_text = f"HAT ÇALIŞMADI; {bp_hours:02d}:{bp_minutes:02d}:{bp_seconds:02d};%100"
-            fig.text(0.05, 0.01, bp_text, transform=fig.transFigure,
-                     fontsize=10, verticalalignment='bottom', bbox=dict(boxstyle='round,pad=0.3', fc='lightgrey', ec='black', lw=0.5))
+            for i, p in enumerate(wedges):
+                ang = (p.theta2 - p.theta1)/2. + p.theta1
+                y = np.sin(np.deg2rad(ang))
+                x = np.cos(np.deg2rad(ang))
+                horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
+                connectionstyle = "angle,angleA=0,angleB={}".format(ang)
+                kw["arrowprops"].update({"connectionstyle": connectionstyle})
+
+                # Format label as "LABEL; HH:MM; %P"
+                label_text = f"{metric_sums.index[i]}; " \
+                             f"{int(metric_sums.values[i] // 3600):02d}:" \
+                             f"{int((metric_sums.values[i] % 3600) // 60):02d}; " \
+                             f"{metric_sums.values[i] / metric_sums.sum() * 100:.0f}%"
+
+                ax.annotate(label_text, xy=(x, y), xytext=(1.35*np.sign(x), 1.4*y),
+                            horizontalalignment=horizontalalignment, **kw)
 
 
             self.figures_data.append((grouped_val, fig))
@@ -641,7 +638,9 @@ class GraphsPage(QWidget):
             else:
                 format = 'jpeg'
 
-            current_fig.savefig(file_name, bbox_inches='tight', pad_inches=0.5, format=format, dpi=300)
+            # Set figure size before saving to ensure 881x584 pixels
+            current_fig.set_size_inches(8.81, 5.84)
+            current_fig.savefig(file_name, bbox_inches='tight', pad_inches=0.5, format=format, dpi=100) # dpi=100 for 881x584 pixels
             QMessageBox.information(self, "Başarılı", f"Grafik '{file_name}' konumuna başarıyla kaydedildi.")
         except Exception as e:
             QMessageBox.critical(self, "Hata", f"Grafik kaydedilirken bir hata oluştu: {e}")
@@ -658,12 +657,11 @@ class MainWindow(QMainWindow):
         self.df: pd.DataFrame = pd.DataFrame()
         self.grouping_col_name: str | None = None
         self.grouped_col_name: str | None = None
-        self.f_col_name: str | None = None # Renamed bp_col_name to f_col_name for clarity
         self.oee_col_name: str | None = None
         self.metric_cols: List[str] = []
         self.grouped_values: List[str] = []
         self.selected_metrics: List[str] = []
-        self.selected_grouping_val: str = "" # New attribute to store the selected grouping value
+        self.selected_grouping_val: str = ""
 
         self.init_ui()
 
@@ -701,7 +699,6 @@ class MainWindow(QMainWindow):
 
             a_idx = excel_col_to_index('A')
             b_idx = excel_col_to_index('B')
-            f_idx = excel_col_to_index('F')
             oee_idx = excel_col_to_index('BP')
 
             if a_idx < len(self.df.columns):
@@ -716,14 +713,6 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Uyarı", f"Excel'de 'B' ({b_idx + 1}. sütun) bulunamadı.")
                 self.grouped_col_name = None
 
-            self.f_col_name = None
-            if f_idx < len(self.df.columns):
-                self.f_col_name = self.df.columns[f_idx]
-                logging.info("BP sütunu (HAT ÇALIŞMADI için): %s", self.f_col_name)
-            else:
-                logging.warning("BP sütunu ('F' indeksi) Excel dosyasında bulunamadı. 'HAT ÇALIŞMADI' değeri '00:00:00;%100' olarak gösterilecek.")
-                self.f_col_name = None
-
             self.oee_col_name = None
             if oee_idx < len(self.df.columns):
                 self.oee_col_name = self.df.columns[oee_idx]
@@ -735,7 +724,7 @@ class MainWindow(QMainWindow):
 
             h_idx = excel_col_to_index("H")
             bd_idx = excel_col_to_index("BD")
-            ap_idx = excel_col_to_index("AP")
+            ap_idx = excel_col_to_index("AP") # AP column is no longer specifically excluded as it's not a 'BP' metric
 
             potential_metrics_from_range = []
             max_col_idx = len(self.df.columns) - 1
@@ -743,8 +732,7 @@ class MainWindow(QMainWindow):
             if h_idx <= max_col_idx and bd_idx <= max_col_idx and h_idx <= bd_idx:
                 for i in range(h_idx, bd_idx + 1):
                     col_name = self.df.columns[i]
-                    if self.df.columns.get_loc(col_name) != ap_idx:
-                        potential_metrics_from_range.append(col_name)
+                    potential_metrics_from_range.append(col_name)
             else:
                 QMessageBox.warning(self, "Uyarı",
                                     f"Metrik aralığı (H-BD) geçersiz veya sütunlar bulunamadı. (H:{h_idx + 1}, BD:{bd_idx + 1}, Toplam Sütun:{len(self.df.columns)})")
