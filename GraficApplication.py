@@ -499,6 +499,11 @@ class GraphsPage(QWidget):
         self.btn_back.clicked.connect(lambda: self.main_window.goto_page(1))
         nav_top.addWidget(self.btn_back)
 
+        self.lbl_chart_info = QLabel("") # Added for displaying date and product info
+        self.lbl_chart_info.setAlignment(Qt.AlignCenter)
+        self.lbl_chart_info.setStyleSheet("font-weight: bold; font-size: 12pt;")
+        nav_top.addWidget(self.lbl_chart_info)
+
         nav_top.addStretch(1)
         self.lbl_page = QLabel("Sayfa 0 / 0")
         self.lbl_page.setAlignment(Qt.AlignCenter)
@@ -543,6 +548,7 @@ class GraphsPage(QWidget):
         self.update_page_label()  # Sayfa etiketini güncelle
         self.progress.setValue(0)  # İlerleme çubuğunu sıfırla
         self.btn_save_image.setEnabled(False)  # Kaydet butonunu devre dışı bırak
+        self.lbl_chart_info.setText("") # Clear chart info label
 
         df = self.main_window.df
 
@@ -570,8 +576,15 @@ class GraphsPage(QWidget):
             self.btn_save_image.setEnabled(False)
             return
 
+        # Convert cm to inches for figure size
+        cm_to_inches = 0.393701
+        fig_width_cm = 14.93
+        fig_height_cm = 9.89
+        fig_width_inches = fig_width_cm * cm_to_inches
+        fig_height_inches = fig_height_cm * cm_to_inches
+
         for grouped_val, metric_sums, oee_display_value in results:
-            fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(aspect="equal"))
+            fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), subplot_kw=dict(aspect="equal"))
 
             # Grafik arka plan rengi
             background_color = '#d3d3d3'  # Açık gri
@@ -603,7 +616,8 @@ class GraphsPage(QWidget):
 
             # Metrik etiketlerini çizgilerle bağlayarak yerleştirme
             bbox_props = dict(boxstyle="round,pad=0.3", fc="white", ec="0.5", lw=0.5)
-            kw = dict(arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0", color='black', lw=1.5),
+            # Changed arrow color to bright gray
+            kw = dict(arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0.3", color='dimgray', lw=1.5),
                       bbox=bbox_props, zorder=0, va="center")
 
             # "HAT ÇALIŞMADI" için özel etiketleme
@@ -615,7 +629,8 @@ class GraphsPage(QWidget):
                     f"{metric_sums.values[0] / metric_sums.sum() * 100:.0f}%"
                 )
                 # Resim1.png'deki konum ve stil için fig.text kullan
-                fig.text(0.5, 0.25,  # Figür koordinatları (0-1), merkezi alt kısımda
+                # Adjusted position to not conflict with top menu, further down
+                fig.text(0.5, 0.2,  # Figür koordinatları (0-1), merkezi alt kısımda
                          label_text,
                          horizontalalignment='center', verticalalignment='center',
                          fontsize=12,  # Resimdeki font boyutuna yakın
@@ -624,14 +639,16 @@ class GraphsPage(QWidget):
                          transform=fig.transFigure  # Figür koordinat sistemini kullan
                          )
             else:
-                # Diğer tüm durumlar için standart etiketleme
+                # Other metric labels
                 for i, p in enumerate(wedges):
                     ang = (p.theta2 - p.theta1) / 2. + p.theta1
                     y = np.sin(np.deg2rad(ang))
                     x = np.cos(np.deg2rad(ang))
 
-                    outside_x = 1.35 * x
-                    outside_y = 1.35 * y
+                    # Adjusted these multipliers to move labels further out to reduce overlap
+                    outside_x = 1.6 * x if x > 0 else 1.6 * x
+                    outside_y = 1.6 * y if y > 0 else 1.6 * y
+
 
                     horizontalalignment = "left" if x > 0 else "right"
 
@@ -643,21 +660,24 @@ class GraphsPage(QWidget):
                     )
 
                     ax.annotate(label_text, xy=(x, y), xytext=(outside_x, outside_y),
-                                horizontalalignment=horizontalalignment, **kw)
+                                horizontalalignment=horizontalalignment, **kw,
+                                color='dimgray') # Set label text color to dimgray
 
             # TOPLAM DURUŞ hesapla ve göster
             total_duration_seconds = metric_sums.sum()
             total_duration_hours = int(total_duration_seconds // 3600)
             total_duration_minutes = int((total_duration_seconds % 3600) // 60)
-            total_duration_text = f"{self.main_window.selected_grouping_val}\n{grouped_val}\n\nTOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
+            # Modified to only show total duration, date and product moved to top menu
+            total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
 
             # TOPLAM DURUŞ metnini sol alt köşeye yerleştir
             fig.text(0.05, 0.05, total_duration_text, transform=fig.transFigure,
                      fontsize=14, fontweight='bold', verticalalignment='bottom')
 
-            ax.set_title("")  # Üstteki başlığı kaldır, tarih ve ürün bilgisi metin olarak eklendi
+            ax.set_title("")  # Üstteki başlığı kaldır
             ax.axis("equal")  # Pie chart'ın daire şeklinde görünmesini sağlar
-            fig.tight_layout(rect=[0, 0.1, 1, 0.95])  # Etiketlerin ve başlıkların sığması için düzenleme
+            # Adjusted rect to make more room for labels and bottom text
+            fig.tight_layout(rect=[0, 0.1, 1, 0.95])
 
             self.figures_data.append((grouped_val, fig))
             plt.close(fig)  # Bellek sızıntısını önlemek için figürü kapat
@@ -693,6 +713,7 @@ class GraphsPage(QWidget):
             self.btn_prev.setEnabled(False)
             self.btn_next.setEnabled(False)
             self.update_page_label()
+            self.lbl_chart_info.setText("") # Clear info when no graphs
             return
 
         start_index = self.current_page * GRAPHS_PER_PAGE
@@ -703,6 +724,9 @@ class GraphsPage(QWidget):
         for grouped_val, fig in graphs_to_display:
             canvas = FigureCanvas(fig)
             self.vbox_canvases.addWidget(canvas)
+            # Update the label with current product and date
+            self.lbl_chart_info.setText(f"{self.main_window.selected_grouping_val} - {grouped_val}")
+
 
         self.update_page_label()
         self.update_navigation_buttons()
