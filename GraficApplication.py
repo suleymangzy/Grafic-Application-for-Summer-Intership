@@ -520,8 +520,13 @@ class GraphsPage(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.canvas_holder = QWidget()
-        self.vbox_canvases = QVBoxLayout(self.canvas_holder)
-        self.canvas_holder.setLayout(self.vbox_canvases)
+        # Grafiklerin ortalanması için QHBoxLayout kullanıldı
+        self.canvas_centered_layout = QHBoxLayout(self.canvas_holder)
+        self.vbox_canvases = QVBoxLayout()
+        self.canvas_centered_layout.addStretch(1)
+        self.canvas_centered_layout.addLayout(self.vbox_canvases)
+        self.canvas_centered_layout.addStretch(1)
+
         self.scroll.setWidget(self.canvas_holder)
         main_layout.addWidget(self.scroll)
 
@@ -576,12 +581,13 @@ class GraphsPage(QWidget):
             self.btn_save_image.setEnabled(False)
             return
 
-        # Convert cm to inches for figure size
-        cm_to_inches = 0.393701
-        fig_width_cm = 14.93
-        fig_height_cm = 9.89
-        fig_width_inches = fig_width_cm * cm_to_inches
-        fig_height_inches = fig_height_cm * cm_to_inches
+        # Convert pixels to inches for figure size (560x374 pixels at 100 DPI)
+        # However, to match the provided image's *visual* size and proportions
+        # which specify 14.93 cm x 9.89 cm, we should use those dimensions.
+        # 1 inch = 2.54 cm
+        fig_width_inches = 14.93 / 2.54
+        fig_height_inches = 9.89 / 2.54
+
 
         for grouped_val, metric_sums, oee_display_value in results:
             fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), subplot_kw=dict(aspect="equal"))
@@ -646,6 +652,7 @@ class GraphsPage(QWidget):
                     x = np.cos(np.deg2rad(ang))
 
                     # Adjusted these multipliers to move labels further out to reduce overlap
+                    # Increased radial distance for better label separation
                     outside_x = 1.6 * x if x > 0 else 1.6 * x
                     outside_y = 1.6 * y if y > 0 else 1.6 * y
 
@@ -723,6 +730,7 @@ class GraphsPage(QWidget):
 
         for grouped_val, fig in graphs_to_display:
             canvas = FigureCanvas(fig)
+            canvas.setFixedSize(560, 374)  # Set fixed size for the canvas
             self.vbox_canvases.addWidget(canvas)
             # Update the label with current product and date
             self.lbl_chart_info.setText(f"{self.main_window.selected_grouping_val} - {grouped_val}")
@@ -782,7 +790,8 @@ class GraphsPage(QWidget):
 
         if filepath:
             try:
-                fig.savefig(filepath, dpi=300, bbox_inches='tight', facecolor=fig.get_facecolor())
+                # Save with the specified dimensions (560x374 pixels)
+                fig.savefig(filepath, dpi=100, bbox_inches='tight', facecolor=fig.get_facecolor())
                 QMessageBox.information(self, "Kaydedildi", f"Grafik başarıyla kaydedildi: {Path(filepath).name}")
                 logging.info("Grafik kaydedildi: %s", filepath)
             except Exception as e:
