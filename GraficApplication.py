@@ -650,6 +650,26 @@ class GraphsPage(QWidget):
                     horizontalalignment='center', verticalalignment='center',
                     fontsize=24, fontweight='bold', color='black')
 
+            # Her dilimin üzerine sıra numarasını yaz
+            radius_text = 0.7  # Metinlerin dilimlerin ortasına ne kadar yakın olacağı
+            for i, wedge in enumerate(wedges):
+                angle = (wedge.theta2 - wedge.theta1) / 2. + wedge.theta1
+                x = radius_text * np.cos(np.deg2rad(angle))
+                y = radius_text * np.sin(np.deg2rad(angle))
+
+                # Metin rengini, arka plan rengiyle kontrast oluşturacak şekilde ayarla
+                r, g, b, _ = matplotlib.colors.to_rgba(chart_colors[i])
+                luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+                text_color = 'white' if luminance < 0.5 else 'black'
+
+                ax.text(x, y, str(i + 1),
+                        horizontalalignment='center',
+                        verticalalignment='center',
+                        fontsize=12,
+                        color=text_color,
+                        fontweight='bold')
+
+
             # Metrik etiketlerini grafiğin solunda alt alta yerleştirme ve numaralandırma
             label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
             label_line_height = 0.05  # Approximate line height for each label
