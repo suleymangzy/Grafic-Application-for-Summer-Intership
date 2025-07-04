@@ -499,7 +499,7 @@ class GraphsPage(QWidget):
         self.btn_back.clicked.connect(lambda: self.main_window.goto_page(1))
         nav_top.addWidget(self.btn_back)
 
-        self.lbl_chart_info = QLabel("") # Added for displaying date and product info
+        self.lbl_chart_info = QLabel("")  # Added for displaying date and product info
         self.lbl_chart_info.setAlignment(Qt.AlignCenter)
         self.lbl_chart_info.setStyleSheet("font-weight: bold; font-size: 12pt;")
         nav_top.addWidget(self.lbl_chart_info)
@@ -520,12 +520,12 @@ class GraphsPage(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.canvas_holder = QWidget()
-        # Grafiklerin ortalanması için QHBoxLayout kullanıldı
+        # Grafiklerin sağına konumlandırılması için QHBoxLayout kullanıldı
         self.canvas_centered_layout = QHBoxLayout(self.canvas_holder)
         self.vbox_canvases = QVBoxLayout()
-        self.canvas_centered_layout.addStretch(1)
+        self.canvas_centered_layout.addStretch(1)  # Stretch on the left to push graphs to the right
         self.canvas_centered_layout.addLayout(self.vbox_canvases)
-        self.canvas_centered_layout.addStretch(1)
+        # self.canvas_centered_layout.addStretch(1) # Removed to align graphs to the right
 
         self.scroll.setWidget(self.canvas_holder)
         main_layout.addWidget(self.scroll)
@@ -553,7 +553,7 @@ class GraphsPage(QWidget):
         self.update_page_label()  # Sayfa etiketini güncelle
         self.progress.setValue(0)  # İlerleme çubuğunu sıfırla
         self.btn_save_image.setEnabled(False)  # Kaydet butonunu devre dışı bırak
-        self.lbl_chart_info.setText("") # Clear chart info label
+        self.lbl_chart_info.setText("")  # Clear chart info label
 
         df = self.main_window.df
 
@@ -581,19 +581,15 @@ class GraphsPage(QWidget):
             self.btn_save_image.setEnabled(False)
             return
 
-        # Convert pixels to inches for figure size (560x374 pixels at 100 DPI)
-        # However, to match the provided image's *visual* size and proportions
-        # which specify 14.93 cm x 9.89 cm, we should use those dimensions.
-        # 1 inch = 2.54 cm
-        fig_width_inches = 14.93 / 2.54
-        fig_height_inches = 9.89 / 2.54
-
+        # Figure size for 700x460 pixels at 100 DPI
+        fig_width_inches = 700 / 100
+        fig_height_inches = 460 / 100
 
         for grouped_val, metric_sums, oee_display_value in results:
             fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), subplot_kw=dict(aspect="equal"))
 
             # Grafik arka plan rengi
-            background_color = '#d3d3d3'  # Açık gri
+            background_color = 'white'  # Açık gri
             fig.patch.set_facecolor(background_color)
             ax.set_facecolor(background_color)
 
@@ -607,9 +603,9 @@ class GraphsPage(QWidget):
                 colors_palette = plt.cm.get_cmap('tab20', num_metrics)
                 chart_colors = [colors_palette(i) for i in range(num_metrics)]
 
-            wedges, texts, autotexts = ax.pie(
+            wedges, texts = ax.pie(
                 metric_sums,
-                autopct='',  # Yüzdeleri direk pasta üzerinde gösterme
+                autopct=None,  # Yüzdeleri direk pasta üzerinde gösterme
                 startangle=90,
                 wedgeprops=dict(width=0.4, edgecolor='w'),  # Donut grafik için
                 colors=chart_colors
@@ -620,55 +616,36 @@ class GraphsPage(QWidget):
                     horizontalalignment='center', verticalalignment='center',
                     fontsize=24, fontweight='bold', color='black')
 
-            # Metrik etiketlerini çizgilerle bağlayarak yerleştirme
-            bbox_props = dict(boxstyle="round,pad=0.3", fc="white", ec="0.5", lw=0.5)
-            # Changed arrow color to bright gray
-            kw = dict(arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0.3", color='dimgray', lw=1.5),
-                      bbox=bbox_props, zorder=0, va="center")
+            # Metrik etiketlerini grafiğin solunda alt alta yerleştirme
+            # Calculate an appropriate starting Y position for stacked labels on the left
+            # This depends on figure height and font size. Start near top left.
+            label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
+            label_line_height = 0.05  # Approximate line height for each label
 
-            # "HAT ÇALIŞMADI" için özel etiketleme
-            if num_metrics == 1 and metric_sums.index[0] == 'HAT ÇALIŞMADI':
+            for i, (metric_name, metric_value) in enumerate(metric_sums.items()):
                 label_text = (
-                    f"{metric_sums.index[0]}; "
-                    f"{int(metric_sums.values[0] // 3600):02d}:"
-                    f"{int((metric_sums.values[0] % 3600) // 60):02d}:00; "  # Saniye de eklendi
-                    f"{metric_sums.values[0] / metric_sums.sum() * 100:.0f}%"
+                    f"{metric_name}; "
+                    f"{int(metric_value // 3600):02d}:"
+                    f"{int((metric_value % 3600) // 60):02d}; "
+                    f"{metric_value / metric_sums.sum() * 100:.0f}%"
                 )
-                # Resim1.png'deki konum ve stil için fig.text kullan
-                # Adjusted position to not conflict with top menu, further down
-                fig.text(0.5, 0.2,  # Figür koordinatları (0-1), merkezi alt kısımda
+
+                # Use figure coordinates for placement
+                y_pos = label_y_start - (i * label_line_height)
+
+                bbox_props = dict(boxstyle="round,pad=0.3", fc="white", ec=chart_colors[i],
+                                  lw=0.5)  # Set edge color to match metric color
+
+                fig.text(0.02,  # X position for left alignment (figure coordinates)
+                         y_pos,
                          label_text,
-                         horizontalalignment='center', verticalalignment='center',
-                         fontsize=12,  # Resimdeki font boyutuna yakın
-                         bbox=dict(boxstyle="square,pad=0.5", fc="white", ec="black", lw=1),
-                         # Kare kutu, siyah kenarlık
-                         transform=fig.transFigure  # Figür koordinat sistemini kullan
+                         horizontalalignment='left',
+                         verticalalignment='top',
+                         fontsize=10,
+                         bbox=bbox_props,
+                         transform=fig.transFigure,
+                         color='dimgray'  # Set label text color to dimgray
                          )
-            else:
-                # Other metric labels
-                for i, p in enumerate(wedges):
-                    ang = (p.theta2 - p.theta1) / 2. + p.theta1
-                    y = np.sin(np.deg2rad(ang))
-                    x = np.cos(np.deg2rad(ang))
-
-                    # Adjusted these multipliers to move labels further out to reduce overlap
-                    # Increased radial distance for better label separation
-                    outside_x = 1.6 * x if x > 0 else 1.6 * x
-                    outside_y = 1.6 * y if y > 0 else 1.6 * y
-
-
-                    horizontalalignment = "left" if x > 0 else "right"
-
-                    label_text = (
-                        f"{metric_sums.index[i]}; "
-                        f"{int(metric_sums.values[i] // 3600):02d}:"
-                        f"{int((metric_sums.values[i] % 3600) // 60):02d}; "
-                        f"{metric_sums.values[i] / metric_sums.sum() * 100:.0f}%"
-                    )
-
-                    ax.annotate(label_text, xy=(x, y), xytext=(outside_x, outside_y),
-                                horizontalalignment=horizontalalignment, **kw,
-                                color='dimgray') # Set label text color to dimgray
 
             # TOPLAM DURUŞ hesapla ve göster
             total_duration_seconds = metric_sums.sum()
@@ -720,7 +697,7 @@ class GraphsPage(QWidget):
             self.btn_prev.setEnabled(False)
             self.btn_next.setEnabled(False)
             self.update_page_label()
-            self.lbl_chart_info.setText("") # Clear info when no graphs
+            self.lbl_chart_info.setText("")  # Clear info when no graphs
             return
 
         start_index = self.current_page * GRAPHS_PER_PAGE
@@ -730,11 +707,10 @@ class GraphsPage(QWidget):
 
         for grouped_val, fig in graphs_to_display:
             canvas = FigureCanvas(fig)
-            canvas.setFixedSize(560, 374)  # Set fixed size for the canvas
+            canvas.setFixedSize(700, 460)  # Set fixed size for the canvas to match 700x460 pixels
             self.vbox_canvases.addWidget(canvas)
             # Update the label with current product and date
             self.lbl_chart_info.setText(f"{self.main_window.selected_grouping_val} - {grouped_val}")
-
 
         self.update_page_label()
         self.update_navigation_buttons()
@@ -790,7 +766,7 @@ class GraphsPage(QWidget):
 
         if filepath:
             try:
-                # Save with the specified dimensions (560x374 pixels)
+                # Save with the specified dimensions (700x460 pixels)
                 fig.savefig(filepath, dpi=100, bbox_inches='tight', facecolor=fig.get_facecolor())
                 QMessageBox.information(self, "Kaydedildi", f"Grafik başarıyla kaydedildi: {Path(filepath).name}")
                 logging.info("Grafik kaydedildi: %s", filepath)
