@@ -46,8 +46,33 @@ logging.basicConfig(
 )
 
 # Matplotlib font ayarları (Türkçe karakter desteği)
-plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False  # Eksi işaretinin doğru gösterimi
+plt.rcParams['font.family'] = 'DejaVu Sans'
+plt.rcParams['font.sans-serif'] = ['SimSun', 'Arial', 'Liberation Sans', 'Bitstream Vera Sans', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False # Negatif işaretler için
+
+# Global matplotlib ayarları
+plt.rcParams['axes.grid'] = True
+plt.rcParams['grid.alpha'] = 0.7
+plt.rcParams['grid.linestyle'] = '--'
+plt.rcParams['grid.linewidth'] = 0.5
+plt.rcParams['figure.dpi'] = 100 # Ekran çözünürlüğü için
+plt.rcParams['savefig.dpi'] = 300 # Kaydedilen resim çözünürlüğü için
+
+# Tick ayarları: Düz çizgiler ve bitiş noktalarında uyumlu noktalar
+plt.rcParams['xtick.direction'] = 'out' # tick markların dışa doğru olmasını sağlar
+plt.rcParams['ytick.direction'] = 'out'
+plt.rcParams['xtick.major.size'] = 7 # Büyük tick uzunluğu
+plt.rcParams['xtick.minor.size'] = 4 # Küçük tick uzunluğu
+plt.rcParams['ytick.major.size'] = 7
+plt.rcParams['ytick.minor.size'] = 4
+plt.rcParams['xtick.major.width'] = 1.5 # Büyük tick kalınlığı
+plt.rcParams['xtick.minor.width'] = 1 # Küçük tick kalınlığı
+plt.rcParams['ytick.major.width'] = 1.5
+plt.rcParams['ytick.minor.width'] = 1
+plt.rcParams['xtick.top'] = False # Üst tickleri kapat
+plt.rcParams['ytick.right'] = False # Sağ tickleri kapat
+plt.rcParams['axes.edgecolor'] = 'black' # Eksen çizgisi rengi
+plt.rcParams['axes.linewidth'] = 1.5 # Eksen çizgisi kalınlığı
 
 
 def excel_col_to_index(col_letter: str) -> int:
@@ -593,18 +618,27 @@ class GraphsPage(QWidget):
             fig.patch.set_facecolor(background_color)
             ax.set_facecolor(background_color)
 
+            # Metrikleri son değerlerine göre büyükten küçüğe sırala
+            # Bu kısım zaten GraphWorker içinde yapılıyor, ancak burada tekrar sıralamak garantiler.
+            # `metric_sums` zaten GraphWorker'dan sıralı gelmediği için burada sıralamayı yapmalıyız.
+            if not metric_sums.empty:
+                # Metrikleri değerlerine göre sırala (büyükten küçüğe)
+                sorted_metrics_series = metric_sums.sort_values(ascending=False)
+            else:
+                sorted_metrics_series = pd.Series() # Boşsa boş bir seri döndür
+
             # Dinamik renk paleti oluştur
-            num_metrics = len(metric_sums)
+            num_metrics = len(sorted_metrics_series)
 
             # Eğer sadece bir metrik varsa ve bu "HAT ÇALIŞMADI" ise özel rengi kullan
-            if num_metrics == 1 and metric_sums.index[0] == 'HAT ÇALIŞMADI':
+            if num_metrics == 1 and sorted_metrics_series.index[0] == 'HAT ÇALIŞMADI':
                 chart_colors = ['#FF9841']  # Resim1.png'deki turuncu/şeftali rengi
             else:
                 colors_palette = plt.cm.get_cmap('tab20', num_metrics)
                 chart_colors = [colors_palette(i) for i in range(num_metrics)]
 
             wedges, texts = ax.pie(
-                metric_sums,
+                sorted_metrics_series,
                 autopct=None,  # Yüzdeleri direk pasta üzerinde gösterme
                 startangle=90,
                 wedgeprops=dict(width=0.4, edgecolor='w'),  # Donut grafik için
@@ -616,16 +650,16 @@ class GraphsPage(QWidget):
                     horizontalalignment='center', verticalalignment='center',
                     fontsize=24, fontweight='bold', color='black')
 
-            # Metrik etiketlerini grafiğin solunda alt alta yerleştirme
+            # Metrik etiketlerini grafiğin solunda alt alta yerleştirme ve numaralandırma
             label_y_start = 0.9  # Adjusted starting position for labels (figure coordinates)
             label_line_height = 0.05  # Approximate line height for each label
 
-            for i, (metric_name, metric_value) in enumerate(metric_sums.items()):
+            for i, (metric_name, metric_value) in enumerate(sorted_metrics_series.items()):
                 label_text = (
-                    f"{metric_name}; "
+                    f"{i+1}. {metric_name}; " # Numaralandırma eklendi
                     f"{int(metric_value // 3600):02d}:"
                     f"{int((metric_value % 3600) // 60):02d}; "
-                    f"{metric_value / metric_sums.sum() * 100:.0f}%"
+                    f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%" # Toplamın sorted_metrics_series.sum() olarak güncellendi
                 )
 
                 # Use figure coordinates for placement
@@ -653,7 +687,7 @@ class GraphsPage(QWidget):
                          )
 
             # TOPLAM DURUŞ hesapla ve göster
-            total_duration_seconds = metric_sums.sum()
+            total_duration_seconds = sorted_metrics_series.sum()
             total_duration_hours = int(total_duration_seconds // 3600)
             total_duration_minutes = int((total_duration_seconds % 3600) // 60)
             total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
