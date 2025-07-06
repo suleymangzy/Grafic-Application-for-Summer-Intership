@@ -2,7 +2,7 @@ import sys
 import logging
 import datetime
 from pathlib import Path
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Union
 
 import pandas as pd
 import numpy as np
@@ -48,29 +48,29 @@ logging.basicConfig(
 # Matplotlib font ayarları (Türkçe karakter desteği)
 plt.rcParams['font.family'] = 'DejaVu Sans'
 plt.rcParams['font.sans-serif'] = ['SimSun', 'Arial', 'Liberation Sans', 'Bitstream Vera Sans', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False # Negatif işaretler için
+plt.rcParams['axes.unicode_minus'] = False  # Negatif işaretler için
 
 # Global matplotlib ayarları
-plt.rcParams['axes.grid'] = True # Bar grafiği için aşağıda özel olarak False yapılacak
+plt.rcParams['axes.grid'] = True  # Bar grafiği için aşağıda özel olarak False yapılacak
 plt.rcParams['grid.alpha'] = 0.7
 plt.rcParams['grid.linestyle'] = '--'
 plt.rcParams['grid.linewidth'] = 0.5
-plt.rcParams['figure.dpi'] = 100 # Ekran çözünürlüğü için
-plt.rcParams['savefig.dpi'] = 300 # Kaydedilen resim çözünürlüğü için
+plt.rcParams['figure.dpi'] = 100  # Ekran çözünürlüğü için
+plt.rcParams['savefig.dpi'] = 300  # Kaydedilen resim çözünürlüğü için
 
 # Tick ayarları: Düz çizgiler ve bitiş noktalarında uyumlu noktalar
-plt.rcParams['xtick.direction'] = 'out' # tick markların dışa doğru olmasını sağlar
+plt.rcParams['xtick.direction'] = 'out'  # tick markların dışa doğru olmasını sağlar
 plt.rcParams['ytick.direction'] = 'out'
-plt.rcParams['xtick.major.size'] = 7 # Büyük tick uzunluğu
-plt.rcParams['xtick.minor.size'] = 4 # Küçük tick uzunluğu
+plt.rcParams['xtick.major.size'] = 7  # Büyük tick uzunluğu
+plt.rcParams['xtick.minor.size'] = 4  # Küçük tick uzunluğu
 plt.rcParams['ytick.major.size'] = 7
 plt.rcParams['ytick.minor.size'] = 4
-plt.rcParams['xtick.major.width'] = 1.5 # Büyük tick kalınlığı
-plt.rcParams['xtick.minor.width'] = 1 # Küçük tick kalınlığı
-plt.rcParams['xtick.top'] = False # Üst tickleri kapat
-plt.rcParams['ytick.right'] = False # Sağ tickleri kapat
-plt.rcParams['axes.edgecolor'] = 'black' # Eksen çizgisi rengi
-plt.rcParams['axes.linewidth'] = 1.5 # Eksen çizgisi kalınlığı
+plt.rcParams['xtick.major.width'] = 1.5  # Büyük tick kalınlığı
+plt.rcParams['xtick.minor.width'] = 1  # Küçük tick kalınlığı
+plt.rcParams['xtick.top'] = False  # Üst tickleri kapat
+plt.rcParams['ytick.right'] = False  # Sağ tickleri kapat
+plt.rcParams['axes.edgecolor'] = 'black'  # Eksen çizgisi rengi
+plt.rcParams['axes.linewidth'] = 1.5  # Eksen çizgisi kalınlığı
 
 
 def excel_col_to_index(col_letter: str) -> int:
@@ -87,10 +87,12 @@ def seconds_from_timedelta(series: pd.Series) -> pd.Series:
     """Pandas Serisi'ndeki zaman değerlerini saniyeye dönüştürür.
     Çeşitli zaman formatlarını (timedelta, time objesi, HH:MM:SS string, sadece sayı) destekler.
     Geçersiz değerleri 0 olarak işler.
+    Optimizasyon: apply kullanmadan datetime.time objelerini ve sayısal değerleri daha verimli işleme.
     """
     seconds_series = pd.Series(0.0, index=series.index, dtype=float)
 
-    # datetime.time objelerini işleme
+    # 1. datetime.time objelerini işleme (vektörize edilemez, ancak mevcut yaklaşım uygun)
+    # Bu kısım zaten verimli, Series.apply() burada kaçınılmaz olabilir çünkü farklı Python objelerini dönüştürüyoruz.
     is_time_obj = series.apply(lambda x: isinstance(x, datetime.time))
     if is_time_obj.any():
         time_objects = series[is_time_obj]
@@ -98,26 +100,29 @@ def seconds_from_timedelta(series: pd.Series) -> pd.Series:
             lambda t: t.hour * 3600 + t.minute * 60 + t.second + t.microsecond / 1e6
         )
 
-    # timedelta objelerini veya timedelta'a dönüştürülebilen stringleri işleme
-    remaining_indices = series.index[~is_time_obj & series.notna()]
-    if not remaining_indices.empty:
-        remaining_series_str = series.loc[remaining_indices].astype(str).str.strip()
-        remaining_series_str = remaining_series_str.replace('', np.nan)  # Boş stringleri NaN yap
-        converted_td = pd.to_timedelta(remaining_series_str, errors='coerce')
+    # 2. timedelta objelerini veya timedelta'a dönüştürülebilen stringleri işleme
+    # `errors='coerce'` ile geçersiz değerler otomatik NaN olur.
+    # Series.loc ile doğrudan atama yapılır, apply yerine.
+    str_and_timedelta_mask = ~is_time_obj & series.notna()
+    if str_and_timedelta_mask.any():
+        # Stringleri ve olası timedelta objelerini to_timedelta'a besle
+        converted_td = pd.to_timedelta(series.loc[str_and_timedelta_mask].astype(str).str.strip(), errors='coerce')
         valid_td_mask = pd.notna(converted_td)
-        seconds_series.loc[remaining_indices[valid_td_mask]] = converted_td[valid_td_mask].dt.total_seconds()
+        seconds_series.loc[str_and_timedelta_mask & valid_td_mask] = converted_td[valid_td_mask].dt.total_seconds()
 
-    # Sayısal değerleri (gün olarak kabul ederek) işleme
-    # Önceki adımlarda işlenmemiş ve hala NaN olan değerleri kontrol et
-    remaining_nan_indices = seconds_series.index[seconds_series.isna()]
-    if not remaining_nan_indices.empty:
-        numeric_values = pd.to_numeric(series.loc[remaining_nan_indices], errors='coerce')
+    # 3. Sayısal değerleri (önceki adımlarda işlenmemiş ve hala NaN olanları) işleme
+    # Burası daha önce doğruydu, çünkü sayısal değerler direkt Excel günleri olarak yorumlanıyor.
+    # Bu adım, önceden timedelta veya time objesi olarak işlenmemiş, ancak sayısal olan değerleri hedefler.
+    remaining_nan_mask = seconds_series.isna()
+    if remaining_nan_mask.any():
+        numeric_candidates = series.loc[remaining_nan_mask]
+        numeric_values = pd.to_numeric(numeric_candidates, errors='coerce')
         valid_numeric_mask = pd.notna(numeric_values)
         if valid_numeric_mask.any():
             # Excel'den gelen sayılar bazen gün olarak yorumlanabilir (timedelta gibi)
             converted_from_numeric = pd.to_timedelta(numeric_values[valid_numeric_mask], unit='D', errors='coerce')
             valid_num_td_mask = pd.notna(converted_from_numeric)
-            seconds_series.loc[remaining_nan_indices[valid_numeric_mask & valid_num_td_mask]] = converted_from_numeric[
+            seconds_series.loc[remaining_nan_mask[valid_numeric_mask] & valid_num_td_mask] = converted_from_numeric[
                 valid_num_td_mask].dt.total_seconds()
 
     return seconds_series.fillna(0.0)  # Tüm NaN değerleri 0 ile doldur
@@ -155,18 +160,25 @@ class GraphWorker(QThread):
             total = len(self.grouped_values)  # Toplam işlem sayısı
 
             # Tüm metrik sütunlarını saniyeye dönüştür (sadece bir kere yap)
+            # Bu işlem zaten df.copy() üzerinde yapıldığı için performans kaybı önleniyor.
             df_processed_times = self.df.copy()
-            cols_to_process = list(self.metric_cols)
+            cols_to_process = [col for col in self.metric_cols if col in df_processed_times.columns]
 
             for col in cols_to_process:
-                if col in df_processed_times.columns:
-                    df_processed_times[col] = seconds_from_timedelta(df_processed_times[col])
+                df_processed_times[col] = seconds_from_timedelta(df_processed_times[col])
+
+            # Gruplama ve gruplanan sütunları bir kere string'e çevir
+            # Bu, döngü içinde tekrar tekrar astype(str) yapılmasını önler.
+            if self.grouping_col_name in df_processed_times.columns:
+                df_processed_times[self.grouping_col_name] = df_processed_times[self.grouping_col_name].astype(str)
+            if self.grouped_col_name in df_processed_times.columns:
+                df_processed_times[self.grouped_col_name] = df_processed_times[self.grouped_col_name].astype(str)
 
             for i, current_grouped_val in enumerate(self.grouped_values, 1):
                 # Mevcut gruplama ve gruplanan değerlere göre alt veri çerçevesini filtrele
                 subset_df_for_chart = df_processed_times[
-                    (df_processed_times[self.grouping_col_name].astype(str) == self.selected_grouping_val) &
-                    (df_processed_times[self.grouped_col_name].astype(str) == current_grouped_val)
+                    (df_processed_times[self.grouping_col_name] == self.selected_grouping_val) &
+                    (df_processed_times[self.grouped_col_name] == current_grouped_val)
                     ].copy()
 
                 # Metrik sütunlarının toplamlarını al
@@ -174,13 +186,17 @@ class GraphWorker(QThread):
                 sums = sums[sums > 0]  # Sadece sıfırdan büyük toplamları dikkate al
 
                 oee_display_value = "0%"  # Varsayılan OEE değeri
-                if self.oee_col_name and self.oee_col_name in self.df.columns:
-                    matching_rows = self.df[
-                        (self.df[self.grouping_col_name].astype(str) == self.selected_grouping_val) &
-                        (self.df[self.grouped_col_name].astype(str) == current_grouped_val)
+                # OEE değerini ana self.df'den almak, üzerinde astype(str) yapılmış kopyadan (df_processed_times) almaktan daha doğru olabilir.
+                # Ancak, filterleme koşulu için self.df'deki ilgili sütunların da string'e çevrilmiş olması gerekir.
+                # Daha tutarlı olması için, OEE değerini alırken de df_processed_times'ı kullanmak mantıklı.
+                if self.oee_col_name and self.oee_col_name in df_processed_times.columns:
+                    matching_rows = df_processed_times[
+                        (df_processed_times[self.grouping_col_name] == self.selected_grouping_val) &
+                        (df_processed_times[self.grouped_col_name] == current_grouped_val)
                         ]
                     if not matching_rows.empty:
-                        oee_value_raw = matching_rows[self.oee_col_name].iloc[0]
+                        # OEE değerini almak için .iloc[0] yerine .values[0] kullanmak biraz daha hızlı olabilir.
+                        oee_value_raw = matching_rows[self.oee_col_name].values[0]
                         if pd.notna(oee_value_raw):
                             try:
                                 oee_value_float: float
@@ -215,6 +231,7 @@ class GraphWorker(QThread):
 
 class GraphPlotter:
     """Matplotlib grafikleri oluşturmak için yardımcı sınıf."""
+
     @staticmethod
     def create_donut_chart(
             ax: plt.Axes,
@@ -230,7 +247,7 @@ class GraphPlotter:
             autopct=None,
             startangle=90,
             wedgeprops=dict(width=0.4, edgecolor='w'),
-            colors=chart_colors[:len(sorted_metrics_series)] # Tüm metrikler için renkleri kullan
+            colors=chart_colors[:len(sorted_metrics_series)]  # Tüm metrikler için renkleri kullan
         )
 
         # OEE değerini grafik merkezine yerleştir
@@ -243,19 +260,19 @@ class GraphPlotter:
         # Figür yüksekliği 460 piksel (4.6 inç * 100 DPI) olduğu için,
         # 30 piksel = 30 / 460 = ~0.065 figür koordinatı.
         # Mevcut label_y_start 0.25 idi, 30 piksel yukarı taşıyalım.
-        label_y_start = 0.25 + (30 / (fig.get_size_inches()[1] * fig.dpi)) # Yaklaşık 0.315 -> 0.32
+        label_y_start = 0.25 + (30 / (fig.get_size_inches()[1] * fig.dpi))  # Yaklaşık 0.315 -> 0.32
         label_line_height = 0.05  # Approximate line height for each label
 
         # Yalnızca ilk 3 metriğin etiketlerini oluştur
         top_3_metrics = sorted_metrics_series.head(3)
-        top_3_colors = chart_colors[:len(top_3_metrics)] # İlk 3 metrik için renkleri al
+        top_3_colors = chart_colors[:len(top_3_metrics)]  # İlk 3 metrik için renkleri al
 
         for i, (metric_name, metric_value) in enumerate(top_3_metrics.items()):
             label_text = (
                 f"{i + 1}. {metric_name}; "  # Numaralandırma eklendi
                 f"{int(metric_value // 3600):02d}:"
                 f"{int((metric_value % 3600) // 60):02d}; "
-                f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%" # Yüzdeyi genel toplama göre hesapla
+                f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%"  # Yüzdeyi genel toplama göre hesapla
             )
             y_pos = label_y_start - (i * label_line_height)
             bbox_props = dict(boxstyle="round,pad=0.3", fc=top_3_colors[i], ec=top_3_colors[i], lw=0.5)
@@ -263,7 +280,7 @@ class GraphPlotter:
             luminance = (0.299 * r + 0.587 * g + 0.114 * b)
             text_color = 'white' if luminance < 0.5 else 'black'
 
-            fig.text(0.02, # X koordinatını sola kaydır
+            fig.text(0.02,  # X koordinatını sola kaydır
                      y_pos,
                      label_text,
                      horizontalalignment='left',
@@ -296,7 +313,7 @@ class GraphPlotter:
 
         ax.barh(y_pos, values_minutes, color=chart_colors)
         ax.set_yticks(y_pos)
-        ax.set_yticklabels(metrics, fontsize=10) # Y ekseni etiketlerinde numaralandırma yok
+        ax.set_yticklabels(metrics, fontsize=10)  # Y ekseni etiketlerinde numaralandırma yok
         ax.invert_yaxis()  # En büyük değeri en üste getir
 
         # X ekseni değerlerini ve etiketlerini kaldır
@@ -315,7 +332,6 @@ class GraphPlotter:
         ax.spines['left'].set_visible(True)
         ax.spines['bottom'].set_visible(True)
 
-
         # Her barın üzerine değeri ve yüzdesini yaz
         total_sum = sorted_metrics_series.sum()
         for i, (value, metric_name) in enumerate(zip(values, metrics)):
@@ -327,11 +343,11 @@ class GraphPlotter:
             # Metin konumunu barın dışına (sağına) al
             # ha='left' yaparak metnin sol kenarını belirteç pozisyonuna hizala
             # x_position'a küçük bir boşluk ekleyerek barın dışına taşı
-            text_x_position = (value / 60) + 0.5 # 0.5 dakika = 30 saniye boşluk
+            text_x_position = (value / 60) + 0.5  # 0.5 dakika = 30 saniye boşluk
             ax.text(text_x_position, i, text_label,
                     va='center', ha='left',
-                    fontsize=11, fontweight='bold', # Fontu kalın ve daha büyük yap
-                    color='black') # Metin barın dışında olduğu için her zaman siyah olsun
+                    fontsize=11, fontweight='bold',  # Fontu kalın ve daha büyük yap
+                    color='black')  # Metin barın dışında olduğu için her zaman siyah olsun
 
         ax.set_xlim(left=0)
         plt.tight_layout(rect=[0.1, 0.1, 0.95, 0.9])
@@ -511,6 +527,7 @@ class DataSelectionPage(QWidget):
         # Gruplama sütunu doldur
         self.cmb_grouping.clear()
         if self.main_window.grouping_col_name and self.main_window.grouping_col_name in df.columns:
+            # Dropna ve unique işlemleri için string dönüşümü burada da tek seferlik yapılabilir.
             grouping_vals = sorted(df[self.main_window.grouping_col_name].dropna().astype(str).unique())
             grouping_vals = [s for s in grouping_vals if s.strip()]  # Boş stringleri filtrele
             self.cmb_grouping.addItems(grouping_vals)
@@ -534,6 +551,11 @@ class DataSelectionPage(QWidget):
         df = self.main_window.df
 
         if selected_grouping_val and self.main_window.grouping_col_name and self.main_window.grouped_col_name:
+            # Filtreleme için burada da astype(str) bir kere yapılabilir.
+            # Ancak refresh içinde df'in kendisi üzerinde değişiklik yapmak yerine
+            # burada kopyasını kullanmak daha güvenli (orijinal df'i değiştirmemek adına).
+            # Veya MainWindow'da bir kere `df_processed_for_selection` tutulabilir.
+            # Şimdilik, filtrenin bir parçası olarak inline olarak tutuyorum.
             filtered_df = df[df[self.main_window.grouping_col_name].astype(str) == selected_grouping_val]
             grouped_vals = sorted(filtered_df[self.main_window.grouped_col_name].dropna().astype(str).unique())
             grouped_vals = [s for s in grouped_vals if s.strip()]
@@ -655,7 +677,7 @@ class GraphsPage(QWidget):
         # Grafik tipi seçimi için ComboBox
         self.cmb_graph_type = QComboBox()
         self.cmb_graph_type.addItems(["Donut", "Bar"])
-        self.cmb_graph_type.setCurrentText(self.current_graph_type) # Varsayılanı ayarla
+        self.cmb_graph_type.setCurrentText(self.current_graph_type)  # Varsayılanı ayarla
         self.cmb_graph_type.currentIndexChanged.connect(self.on_graph_type_changed)
         nav_top.addWidget(self.cmb_graph_type)
 
@@ -707,7 +729,6 @@ class GraphsPage(QWidget):
         # Bu yüzden enter_page'i yeniden çağırarak tüm grafiklerin yeni tipe göre oluşturulmasını sağlarız.
         self.enter_page()
 
-
     def on_results(self, results: List[Tuple[str, pd.Series, str]]) -> None:
         """GraphWorker'dan gelen sonuçları işler ve grafikleri oluşturur."""
         self.progress.setValue(100)
@@ -715,9 +736,10 @@ class GraphsPage(QWidget):
         if not results:
             QMessageBox.information(self, "Veri yok", "Grafik oluşturulamadı. Seçilen kriterlere göre veri bulunamadı.")
             self.btn_save_image.setEnabled(False)
+            self.lbl_chart_info.setText("Gösterilecek grafik bulunamadı.")
             return
 
-        self.figures_data.clear() # Mevcut tüm grafikleri temizle
+        self.figures_data.clear()  # Mevcut tüm grafikleri temizle
 
         fig_width_inches = 700 / 100
         fig_height_inches = 460 / 100
@@ -737,14 +759,21 @@ class GraphsPage(QWidget):
             if num_metrics == 1 and sorted_metrics_series.index[0] == 'HAT ÇALIŞMADI':
                 chart_colors = ['#FF9841']
             else:
-                colors_palette = plt.cm.get_cmap('tab20', num_metrics)
-                chart_colors = [colors_palette(i) for i in range(num_metrics)]
+                # Optimizasyon: Matplotlib DeprecationWarning'i giderildi.
+                # 'tab20' gibi kategorik colormap'ler için 'get_cmap()' veya doğrudan erişim önerilir.
+                # Belirli bir sayıda renk almak için range(num_metrics) ile indeksleme yapmak 'tab20' için uygundur.
+                try:
+                    colors_palette = matplotlib.colormaps.get_cmap('tab20')
+                except AttributeError:  # Eski Matplotlib sürümleri için yedek
+                    colors_palette = plt.cm.get_cmap('tab20', num_metrics)
+
+                # num_metrics > 0 ise renkleri oluştur, aksi takdirde boş liste
+                chart_colors = [colors_palette(i) for i in range(num_metrics)] if num_metrics > 0 else []
 
             if self.current_graph_type == "Donut":
                 GraphPlotter.create_donut_chart(ax, sorted_metrics_series, oee_display_value, chart_colors, fig)
             elif self.current_graph_type == "Bar":
                 GraphPlotter.create_bar_chart(ax, sorted_metrics_series, oee_display_value, chart_colors)
-
 
             # TOPLAM DURUŞ hesapla ve göster (her iki grafik tipi için)
             total_duration_seconds = sorted_metrics_series.sum()
@@ -753,23 +782,24 @@ class GraphsPage(QWidget):
             total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİDA"
 
             # TOPLAM DURUŞ metnini sol alt köşeye yerleştir
-            fig.text(0.01, 0.05, total_duration_text, transform=fig.transFigure, # X koordinatı 0.01 olarak değiştirildi
+            fig.text(0.01, 0.05, total_duration_text, transform=fig.transFigure,
+                     # X koordinatı 0.01 olarak değiştirildi
                      fontsize=14, fontweight='bold', verticalalignment='bottom')
 
-
-            self.figures_data.append((grouped_val, fig, oee_display_value)) # OEE değeri de figures_data'da tutulacak
-            plt.close(fig)
+            self.figures_data.append((grouped_val, fig, oee_display_value))  # OEE değeri de figures_data'da tutulacak
+            plt.close(fig)  # Belleği boşaltmak için figürü kapat
 
         self.display_current_page_graphs()
-        self.btn_save_image.setEnabled(True)
+        if self.figures_data:  # Grafik varsa kaydetme butonunu etkinleştir
+            self.btn_save_image.setEnabled(True)
 
     def enter_page(self) -> None:
         """Bu sayfaya girildiğinde grafikleri yeniden oluşturma sürecini başlatır."""
         self.figures_data.clear()  # Önceki grafikleri temizle
-        self.clear_canvases()      # Tuvali temizle
+        self.clear_canvases()  # Tuvali temizle
         self.progress.setValue(0)  # İlerleme çubuğunu sıfırla
-        self.btn_save_image.setEnabled(False) # Kaydetme butonunu devre dışı bırak
-        self.lbl_chart_info.setText("Grafikler oluşturuluyor...") # Bilgi metnini güncelle
+        self.btn_save_image.setEnabled(False)  # Kaydetme butonunu devre dışı bırak
+        self.lbl_chart_info.setText("Grafikler oluşturuluyor...")  # Bilgi metnini güncelle
 
         # Worker zaten çalışıyorsa, durdur ve yeni bir tane başlat
         if self.worker and self.worker.isRunning():
@@ -781,7 +811,7 @@ class GraphsPage(QWidget):
             grouping_col_name=self.main_window.grouping_col_name,
             grouped_col_name=self.main_window.grouped_col_name,
             grouped_values=self.main_window.grouped_values,
-            metric_cols=self.main_window.selected_metrics, # Sadece seçili metrikleri kullan
+            metric_cols=self.main_window.selected_metrics,  # Sadece seçili metrikleri kullan
             oee_col_name=self.main_window.oee_col_name,
             selected_grouping_val=self.main_window.selected_grouping_val
         )
@@ -793,8 +823,9 @@ class GraphsPage(QWidget):
     def on_error(self, message: str) -> None:
         """GraphWorker'dan gelen hata mesajını gösterir."""
         QMessageBox.critical(self, "Hata", message)
-        self.progress.setValue(0) # Hata durumunda ilerlemeyi sıfırla
+        self.progress.setValue(0)  # Hata durumunda ilerlemeyi sıfırla
         self.lbl_chart_info.setText("Grafik oluşturma hatası.")
+        self.btn_save_image.setEnabled(False)  # Hata durumunda kaydetme butonunu devre dışı bırak
 
     def clear_canvases(self) -> None:
         """Mevcut grafik tuvallerini temizler."""
@@ -827,6 +858,11 @@ class GraphsPage(QWidget):
             self.lbl_chart_info.setText("Gösterilecek grafik bulunamadı.")
             return
 
+        # current_page'i güvenli bir aralıkta tut
+        total_pages = (len(self.figures_data) + GRAPHS_PER_PAGE - 1) // GRAPHS_PER_PAGE
+        if self.current_page >= total_pages:
+            self.current_page = 0  # Sayfa dışına çıkarsa ilk sayfaya dön
+
         start_index = self.current_page * GRAPHS_PER_PAGE
         end_index = start_index + GRAPHS_PER_PAGE
 
@@ -836,6 +872,7 @@ class GraphsPage(QWidget):
             canvas = FigureCanvas(fig)
             canvas.setFixedSize(700, 460)
             self.vbox_canvases.addWidget(canvas)
+            # lbl_chart_info, sadece mevcut grafik bilgisini göstermeli.
             self.lbl_chart_info.setText(f"{self.main_window.selected_grouping_val} - {grouped_val}")
 
         self.update_page_label()
@@ -871,25 +908,29 @@ class GraphsPage(QWidget):
             QMessageBox.warning(self, "Kaydedilecek Grafik Yok", "Görüntülenecek bir grafik bulunmamaktadır.")
             return
 
-        if self.current_page >= len(self.figures_data) // GRAPHS_PER_PAGE:
+        # figures_data listesi boş olmasa bile, current_page geçersiz olabilir.
+        # current_page'in geçerli bir index aralığında olduğundan emin ol.
+        total_graphs = len(self.figures_data)
+        fig_index_on_page = self.current_page * GRAPHS_PER_PAGE
+
+        if not (0 <= fig_index_on_page < total_graphs):
             QMessageBox.warning(self, "Geçersiz Sayfa", "Mevcut sayfada kaydedilecek bir grafik yok.")
             return
 
-        fig_index_on_page = self.current_page * GRAPHS_PER_PAGE
-        if fig_index_on_page < len(self.figures_data):
-            grouped_val, fig, _ = self.figures_data[fig_index_on_page]
-        else:
-            QMessageBox.warning(self, "Kaydedilecek Grafik Yok", "Mevcut sayfada kaydedilecek bir grafik yok.")
-            return
+        grouped_val, fig, _ = self.figures_data[fig_index_on_page]
 
-        default_filename = f"grafik_{grouped_val}_{self.main_window.selected_grouping_val}_{self.current_graph_type}.png".replace(" ", "_").replace("/", "-")
+        default_filename = f"grafik_{grouped_val}_{self.main_window.selected_grouping_val}_{self.current_graph_type}.png".replace(
+            " ", "_").replace("/", "-")
         filepath, _ = QFileDialog.getSaveFileName(
             self, "Grafiği Kaydet", default_filename, "PNG (*.png);;JPEG (*.jpeg);;JPG (*.jpg)"
         )
 
         if filepath:
             try:
-                fig.savefig(filepath, dpi=100, bbox_inches='tight', facecolor=fig.get_facecolor())
+                # dpi=100 yerine plt.rcParams['savefig.dpi'] kullanılabilir veya doğrudan 300 atanabilir
+                # bbox_inches='tight' metinlerin kesilmemesini sağlar
+                fig.savefig(filepath, dpi=plt.rcParams['savefig.dpi'], bbox_inches='tight',
+                            facecolor=fig.get_facecolor())
                 QMessageBox.information(self, "Kaydedildi", f"Grafik başarıyla kaydedildi: {Path(filepath).name}")
                 logging.info("Grafik kaydedildi: %s", filepath)
             except Exception as e:
