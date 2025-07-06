@@ -417,17 +417,19 @@ class FileSelectionPage(QWidget):
             self.lbl_path.setText(f"Seçilen Dosya: <b>{Path(path).name}</b>")
             self.cmb_sheet.clear()
             self.cmb_sheet.addItems(sheets)
-            self.cmb_sheet.setEnabled(True)
-            self.sheet_selection_label.show()
-            self.cmb_sheet.show()
-            self.btn_next.setEnabled(True)
+            self.btn_next.setEnabled(True)  # Butonun her iki durumda da aktif olmasını sağla
 
             if len(sheets) == 1:  # Eğer sadece bir uygun sayfa varsa, otomatik seç
                 self.main_window.selected_sheet = sheets[0]
                 self.sheet_selection_label.setText(f"İşlenecek Sayfa: <b>{self.main_window.selected_sheet}</b>")
+                self.sheet_selection_label.show()  # Etiketi göster
                 self.cmb_sheet.hide()  # ComboBox'ı gizle
-            else:
-                self.main_window.selected_sheet = self.cmb_sheet.currentText()  # Seçili sayfayı al
+                self.cmb_sheet.setEnabled(False)  # ComboBox'ı devre dışı bırak
+            else:  # Birden fazla uygun sayfa varsa
+                self.main_window.selected_sheet = self.cmb_sheet.currentText()  # Varsayılan olarak ilk seçili sayfayı al
+                self.sheet_selection_label.hide()  # Etiketi gizle
+                self.cmb_sheet.show()  # ComboBox'ı göster
+                self.cmb_sheet.setEnabled(True)  # ComboBox'ı etkinleştir
 
             logging.info("Dosya seçildi: %s", path)
 
@@ -438,7 +440,15 @@ class FileSelectionPage(QWidget):
 
     def on_sheet_selected(self) -> None:
         """Sayfa seçimi değiştiğinde ana penceredeki seçimi günceller."""
-        self.main_window.selected_sheet = self.cmb_sheet.currentText()
+        # Yalnızca cmb_sheet görünür olduğunda veya etkinleştirildiğinde selected_sheet'i güncelle
+        if self.cmb_sheet.isVisible() and self.cmb_sheet.isEnabled():
+            self.main_window.selected_sheet = self.cmb_sheet.currentText()
+        elif not self.cmb_sheet.isVisible() and self.main_window.selected_sheet is None:
+            # Bu durum, tek sayfa otomatik seçiminde oluşabilir, ancak selected_sheet zaten ayarlanmış olmalı.
+            # Yine de olası boş durumlar için kontrol edelim, ancak testte bu durum ele alınmalı.
+            pass  # Zaten set edilmiş olacaktır.
+
+        # Next butonunun etkinleştirilmesi sadece geçerli bir sayfa seçildiğinde olmalı
         self.btn_next.setEnabled(bool(self.main_window.selected_sheet))
 
     def go_next(self) -> None:
@@ -527,22 +537,20 @@ class DataSelectionPage(QWidget):
         # Gruplama sütunu doldur
         self.cmb_grouping.clear()
         if self.main_window.grouping_col_name and self.main_window.grouping_col_name in df.columns:
-            # Dropna ve unique işlemleri için string dönüşümü burada da tek seferlik yapılabilir.
             grouping_vals = sorted(df[self.main_window.grouping_col_name].dropna().astype(str).unique())
-            grouping_vals = [s for s in grouping_vals if s.strip()]  # Boş stringleri filtrele
+            grouping_vals = [s for s in grouping_vals if s.strip()]
             self.cmb_grouping.addItems(grouping_vals)
             if not grouping_vals:
                 QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) boş veya geçerli değer içermiyor.")
         else:
             QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) bulunamadı veya boş.")
-            # Eğer gruplama sütunu yoksa, diğer alanları da boşalt
             self.cmb_grouping.clear()
             self.lst_grouped.clear()
-            self.clear_metrics_checkboxes()  # Metrik checkbox'larını da temizle
-            return  # Fonksiyondan çık
+            self.clear_metrics_checkboxes()
+            return
 
-        self.populate_metrics_checkboxes()  # Metrik checkbox'larını doldur
-        self.populate_grouped()  # Gruplanan değişkenleri doldur
+        self.populate_metrics_checkboxes()
+        self.populate_grouped()
 
     def populate_grouped(self) -> None:
         """Gruplanan değişkenler listesini (ürünler) doldurur."""
@@ -551,11 +559,6 @@ class DataSelectionPage(QWidget):
         df = self.main_window.df
 
         if selected_grouping_val and self.main_window.grouping_col_name and self.main_window.grouped_col_name:
-            # Filtreleme için burada da astype(str) bir kere yapılabilir.
-            # Ancak refresh içinde df'in kendisi üzerinde değişiklik yapmak yerine
-            # burada kopyasını kullanmak daha güvenli (orijinal df'i değiştirmemek adına).
-            # Veya MainWindow'da bir kere `df_processed_for_selection` tutulabilir.
-            # Şimdilik, filtrenin bir parçası olarak inline olarak tutuyorum.
             filtered_df = df[df[self.main_window.grouping_col_name].astype(str) == selected_grouping_val]
             grouped_vals = sorted(filtered_df[self.main_window.grouped_col_name].dropna().astype(str).unique())
             grouped_vals = [s for s in grouped_vals if s.strip()]
@@ -565,13 +568,17 @@ class DataSelectionPage(QWidget):
                 item.setSelected(True)  # Varsayılan olarak hepsini seç
                 self.lst_grouped.addItem(item)
 
+            if self.lst_grouped.count() > 0:
+                self.lst_grouped.selectAll() # Tüm öğeleri açıkça seç
+                self.lst_grouped.setCurrentRow(0) # İlk öğeyi "geçerli" olarak ayarla
+
         self.update_next_button_state()
 
     def populate_metrics_checkboxes(self):
         """Metrik sütunları için checkbox'ları oluşturur ve doldurur."""
-        self.clear_metrics_checkboxes()  # Mevcut checkbox'ları temizle
+        self.clear_metrics_checkboxes()
 
-        self.main_window.selected_metrics = []  # Seçili metrikleri sıfırla
+        self.main_window.selected_metrics = []
 
         if not self.main_window.metric_cols:
             empty_label = QLabel("Seçilebilir metrik bulunamadı.", parent=self.metrics_content_widget)
@@ -582,22 +589,21 @@ class DataSelectionPage(QWidget):
 
         for col_name in self.main_window.metric_cols:
             checkbox = QCheckBox(col_name)
-            # Sütunun tamamen boş olup olmadığını kontrol et
             is_entirely_empty = self.main_window.df[col_name].dropna().empty
 
             if is_entirely_empty:
-                checkbox.setChecked(False)  # Boşsa seçili olmasın
-                checkbox.setEnabled(False)  # Ve devre dışı olsun
+                checkbox.setChecked(False)
+                checkbox.setEnabled(False)
                 checkbox.setText(f"{col_name} (Boş)")
                 checkbox.setStyleSheet("color: gray;")
             else:
-                checkbox.setChecked(True)  # Doluysa seçili olsun
-                self.main_window.selected_metrics.append(col_name)  # Seçili metriklere ekle
+                checkbox.setChecked(True)
+                self.main_window.selected_metrics.append(col_name)
 
             checkbox.stateChanged.connect(self.on_metric_checkbox_changed)
             self.metrics_layout.addWidget(checkbox)
 
-        self.update_next_button_state()  # İleri butonunun durumunu güncelle
+        self.update_next_button_state()
 
     def clear_metrics_checkboxes(self):
         """Metrik checkbox'larını temizler."""
@@ -610,7 +616,7 @@ class DataSelectionPage(QWidget):
     def on_metric_checkbox_changed(self, state):
         """Bir metrik checkbox'ının durumu değiştiğinde çağrılır."""
         sender_checkbox = self.sender()
-        metric_name = sender_checkbox.text().replace(" (Boş)", "")  # "(Boş)" kısmını temizle
+        metric_name = sender_checkbox.text().replace(" (Boş)", "")
 
         if state == Qt.Checked:
             if metric_name not in self.main_window.selected_metrics:
@@ -634,8 +640,7 @@ class DataSelectionPage(QWidget):
         if not self.main_window.grouped_values or not self.main_window.selected_metrics:
             QMessageBox.warning(self, "Seçim Eksik", "Lütfen en az bir gruplanan değişken ve bir metrik seçin.")
             return
-        self.main_window.goto_page(2)  # Grafik sayfasına git
-
+        self.main_window.goto_page(2)
 
 class GraphsPage(QWidget):
     """Oluşturulan grafikleri gösteren ve kaydetme seçenekleri sunan sayfa."""
