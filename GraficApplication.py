@@ -356,145 +356,116 @@ class GraphPlotter:
 class FileSelectionPage(QWidget):
     """Dosya seçimi sayfasını temsil eder."""
 
-    INIT_LABEL_TEXT = "Henüz dosya seçilmedi"
-
-    # ---------- ctor ----------
     def __init__(self, main_window: "MainWindow") -> None:
         super().__init__()
         self.main_window = main_window
-        self._build_ui()
+        self.init_ui()
 
-    # ---------- UI inşası ----------
-    def _build_ui(self) -> None:
+    def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
 
-        title = QLabel("<h2>Dosya Seçimi</h2>", objectName="title_label")
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        title_label = QLabel("<h2>Dosya Seçimi</h2>")
+        title_label.setObjectName("title_label")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
 
-        self.lbl_path = QLabel(self.INIT_LABEL_TEXT, alignment=Qt.AlignCenter)
+        self.lbl_path = QLabel("Henüz dosya seçilmedi")
+        self.lbl_path.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_path)
 
-        # Dosya gözat düğmesi
         self.btn_browse = QPushButton(".xlsx dosyası seç…")
         self.btn_browse.clicked.connect(self.browse)
         layout.addWidget(self.btn_browse)
 
-        # Tek sayfa bilgilendirme etiketi
-        self.sheet_selection_label = QLabel(alignment=Qt.AlignCenter)
-        self.sheet_selection_label.hide()
+        self.sheet_selection_label = QLabel("İşlenecek Sayfa:")
+        self.sheet_selection_label.setAlignment(Qt.AlignCenter)
+        self.sheet_selection_label.hide()  # Başlangıçta gizli
         layout.addWidget(self.sheet_selection_label)
 
-        # Birden fazla sayfa için seçim kutusu
         self.cmb_sheet = QComboBox()
-        self.cmb_sheet.hide()
-        self.cmb_sheet.setEnabled(False)
+        self.cmb_sheet.setEnabled(False)  # Başlangıçta devre dışı
         self.cmb_sheet.currentIndexChanged.connect(self.on_sheet_selected)
+        self.cmb_sheet.hide()  # Başlangıçta gizli
         layout.addWidget(self.cmb_sheet)
 
-        # İleri butonu
         self.btn_next = QPushButton("İleri →")
-        self.btn_next.setEnabled(False)
+        self.btn_next.setEnabled(False)  # Başlangıçta devre dışı
         self.btn_next.clicked.connect(self.go_next)
         layout.addWidget(self.btn_next, alignment=Qt.AlignRight)
 
-        layout.addStretch(1)
+        layout.addStretch(1)  # Boşluk ekle
 
-    # ---------- Dosya seçimi ----------
     def browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Excel seç", str(Path.home()), "Excel Files (*.xlsx)"
-        )
+        """Kullanıcının Excel dosyası seçmesini sağlar."""
+        path, _ = QFileDialog.getOpenFileName(self, "Excel seç", str(Path.home()), "Excel Files (*.xlsx)")
         if not path:
             return
 
         try:
             xls = pd.ExcelFile(path)
-            sheets = sorted(REQ_SHEETS.intersection(xls.sheet_names))
+            # İstenen sayfa isimlerinden hangilerinin dosyada olduğunu bul
+            sheets = sorted(list(REQ_SHEETS.intersection(set(xls.sheet_names))))
 
             if not sheets:
-                QMessageBox.warning(
-                    self, "Uygun sayfa yok",
-                    "Seçilen dosyada SMD‑OEE, ROBOT veya DALGA_LEHİM sheet'i bulunamadı."
-                )
+                QMessageBox.warning(self, "Uygun sayfa yok",
+                                    "Seçilen dosyada istenen (SMD-OEE, ROBOT, DALGA_LEHİM) sheet bulunamadı.")
                 self.reset_page()
                 return
 
-            # Ana pencere state güncelle
             self.main_window.excel_path = Path(path)
-            self.lbl_path.setText(f"Seçilen Dosya: <b>{self.main_window.excel_path.name}</b>")
+            self.lbl_path.setText(f"Seçilen Dosya: <b>{Path(path).name}</b>")
             self.cmb_sheet.clear()
             self.cmb_sheet.addItems(sheets)
+            self.btn_next.setEnabled(True)  # Butonun her iki durumda da aktif olmasını sağla
 
-            # Tek / çok sayfa ayrımı
-            if len(sheets) == 1:
+            if len(sheets) == 1:  # Eğer sadece bir uygun sayfa varsa, otomatik seç
                 self.main_window.selected_sheet = sheets[0]
-                self.update_ui_for_sheet_selection(single=True, sheet_name=sheets[0])
-            else:
-                self.main_window.selected_sheet = self.cmb_sheet.currentText()
-                self.update_ui_for_sheet_selection(single=False)
+                self.sheet_selection_label.setText(f"İşlenecek Sayfa: <b>{self.main_window.selected_sheet}</b>")
+                self.sheet_selection_label.show()  # Etiketi göster
+                self.cmb_sheet.hide()  # ComboBox'ı gizle
+                self.cmb_sheet.setEnabled(False)  # ComboBox'ı devre dışı bırak
+            else:  # Birden fazla uygun sayfa varsa
+                self.main_window.selected_sheet = self.cmb_sheet.currentText()  # Varsayılan olarak ilk seçili sayfayı al
+                self.sheet_selection_label.hide()  # Etiketi gizle
+                self.cmb_sheet.show()  # ComboBox'ı göster
+                self.cmb_sheet.setEnabled(True)  # ComboBox'ı etkinleştir
 
-                # -------------- TEST FİXİ ----------------
-                # Unit‑test’te üst widget gösterilmediğinden,
-                # combobox görünür kabul edilmiyor → zinciri tamamla
-                if not self.isVisible():  # runtime’da genelde zaten True
-                    self.setVisible(True)  # sadece test koşulu için
-                # -----------------------------------------
+            logging.info("Dosya seçildi: %s", path)
 
-            # “İleri” butonu
-            self.btn_next.setEnabled(True)
-
-            logging.info(f"Dosya seçildi: {path}")
-
-        except Exception as exc:  # geniş tutarak logluyoruz
-            QMessageBox.critical(
-                self, "Okuma hatası",
-                f"Dosya okunurken bir hata oluştu:\n{exc}\n"
-                "Lütfen dosyanın bozuk olmadığından ve Excel formatında olduğundan emin olun."
-            )
+        except Exception as e:
+            QMessageBox.critical(self, "Okuma hatası",
+                                 f"Dosya okunurken bir hata oluştu: {e}\nLütfen dosyanın bozuk olmadığından ve Excel formatında olduğundan emin olun.")
             self.reset_page()
 
-    # ---------- Sheet seçimi değiştiğinde ----------
     def on_sheet_selected(self) -> None:
-        """Combobox’taki seçim değiştiğinde ana pencerenin durumunu günceller."""
-        # Sadece currentText() kullan — testte patch edilebilir olduğu için daha güvenli
-        current = self.cmb_sheet.currentText().strip()
+        """Sayfa seçimi değiştiğinde ana penceredeki seçimi günceller."""
+        # Yalnızca cmb_sheet görünür olduğunda veya etkinleştirildiğinde selected_sheet'i güncelle
+        if self.cmb_sheet.isVisible() and self.cmb_sheet.isEnabled():
+            self.main_window.selected_sheet = self.cmb_sheet.currentText()
+        elif not self.cmb_sheet.isVisible() and self.main_window.selected_sheet is None:
+            # Bu durum, tek sayfa otomatik seçiminde oluşabilir, ancak selected_sheet zaten ayarlanmış olmalı.
+            # Yine de olası boş durumlar için kontrol edelim, ancak testte bu durum ele alınmalı.
+            pass  # Zaten set edilmiş olacaktır.
 
-        self.main_window.selected_sheet = current or None
-        self.btn_next.setEnabled(bool(current))
+        # Next butonunun etkinleştirilmesi sadece geçerli bir sayfa seçildiğinde olmalı
+        self.btn_next.setEnabled(bool(self.main_window.selected_sheet))
 
-    # ---------- “İleri” ----------
     def go_next(self) -> None:
-        self.main_window.load_excel()
-        self.main_window.goto_page(1)  # Veri Seçimi sayfası
+        """Bir sonraki sayfaya geçer."""
+        self.main_window.load_excel()  # Excel verilerini yükle
+        self.main_window.goto_page(1)  # Veri seçimi sayfasına git
 
-    # ---------- UI yardımcıları ----------
-    def update_ui_for_sheet_selection(self, *, single: bool, sheet_name: str = "") -> None:
-        """Tek veya çok sayfa durumunda gerekli görünürlük ayarlarını yapar."""
-        if single:
-            self.sheet_selection_label.setText(f"İşlenecek Sayfa: <b>{sheet_name}</b>")
-            self.sheet_selection_label.show()
-            self.cmb_sheet.hide()
-            self.cmb_sheet.setEnabled(False)
-        else:
-            self.sheet_selection_label.hide()
-            # Hem show hem setVisible(True) → bazı sürümlerde gerekli
-            self.cmb_sheet.show()
-            self.cmb_sheet.setVisible(True)
-            self.cmb_sheet.setEnabled(True)
-
-    # ---------- Reset ----------
-    def reset_page(self) -> None:
-        self.lbl_path.setText(self.INIT_LABEL_TEXT)
-        self.btn_next.setEnabled(False)
-        self.cmb_sheet.clear()
+    def reset_page(self):
+        """Sayfayı başlangıç durumuna döndürür."""
         self.main_window.excel_path = None
-        self.main_window.df = pd.DataFrame()
         self.main_window.selected_sheet = None
-        self.sheet_selection_label.hide()
+        self.lbl_path.setText("Henüz dosya seçilmedi")
+        self.cmb_sheet.clear()
+        self.cmb_sheet.setEnabled(False)
         self.cmb_sheet.hide()
-        logging.info("Dosya Seçim sayfası sıfırlandı.")
+        self.sheet_selection_label.hide()
+        self.btn_next.setEnabled(False)
 
 
 class DataSelectionPage(QWidget):
@@ -570,11 +541,9 @@ class DataSelectionPage(QWidget):
             grouping_vals = [s for s in grouping_vals if s.strip()]
             self.cmb_grouping.addItems(grouping_vals)
             if not grouping_vals:
-                # Use the actual grouping_col_name in the warning message
-                QMessageBox.warning(self, "Uyarı", f"Gruplama sütunu ({self.main_window.grouping_col_name}) boş veya geçerli değer içermiyor.")
+                QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) boş veya geçerli değer içermiyor.")
         else:
-            # Use the actual grouping_col_name in the warning message
-            QMessageBox.warning(self, "Uyarı", f"Gruplama sütunu ({self.main_window.grouping_col_name}) bulunamadı veya boş.")
+            QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) bulunamadı veya boş.")
             self.cmb_grouping.clear()
             self.lst_grouped.clear()
             self.clear_metrics_checkboxes()
@@ -596,14 +565,12 @@ class DataSelectionPage(QWidget):
 
             for gv in grouped_vals:
                 item = QListWidgetItem(gv)
-                # item.setSelected(True) # This is redundant if selectAll() is called later
+                item.setSelected(True)  # Varsayılan olarak hepsini seç
                 self.lst_grouped.addItem(item)
 
             if self.lst_grouped.count() > 0:
-                # Ensure all items are explicitly selected
-                self.lst_grouped.selectAll()
-                # Set current row to ensure one item is focused, important for UI but selectAll handles selection state
-                self.lst_grouped.setCurrentRow(0)
+                self.lst_grouped.selectAll() # Tüm öğeleri açıkça seç
+                self.lst_grouped.setCurrentRow(0) # İlk öğeyi "geçerli" olarak ayarla
 
         self.update_next_button_state()
 
