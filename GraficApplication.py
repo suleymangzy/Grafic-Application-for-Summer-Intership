@@ -1084,9 +1084,24 @@ class MonthlyGraphWorker(QThread):
                 fig.autofmt_xdate(rotation=45)
 
                 ax.yaxis.set_major_formatter(PercentFormatter())
-                # Y ekseni limitini 0-1 olarak ayarladım, PercentFormatter ile %0-100 gösterilecek.
-                # %0'ı daha görünür yapmak için alt limiti hafifçe negatif yap
-                ax.set_ylim(bottom=-0.05, top=1)
+
+                # Y ekseni limitlerini dinamik olarak ayarla
+                min_oee_val = oee_values.min()
+                max_oee_val = oee_values.max()
+
+                y_min = 0.0
+                if min_oee_val < 0.05 and min_oee_val >= 0:
+                    y_min = -0.05
+                elif min_oee_val < 0:
+                    y_min = min_oee_val * 1.1
+
+                y_max = max(0.1, max_oee_val * 1.1)
+                if y_max > 1.0:
+                    y_max = 1.0
+                elif y_max < 0.1:
+                    y_max = 0.1
+
+                ax.set_ylim(bottom=y_min, top=y_max)
 
                 ax.set_xlabel("Tarih", fontsize=12, fontweight='bold')
                 ax.set_ylabel("OEE (%)", fontsize=12, fontweight='bold')
@@ -1184,8 +1199,11 @@ class MonthlyGraphsPage(QWidget):
         main_layout.addWidget(self.other_graphs_widget)
         self.other_graphs_widget.hide()
 
-        self.monthly_chart_container.setMinimumHeight(460)
-        main_layout.addWidget(self.monthly_chart_container)
+        # Add a scroll area for the chart container
+        self.monthly_chart_scroll_area = QScrollArea()
+        self.monthly_chart_scroll_area.setWidgetResizable(True)
+        self.monthly_chart_scroll_area.setWidget(self.monthly_chart_container)
+        main_layout.addWidget(self.monthly_chart_scroll_area)  # Add the scroll area to the main layout
 
         self.monthly_progress = QProgressBar()
         self.monthly_progress.setAlignment(Qt.AlignCenter)
