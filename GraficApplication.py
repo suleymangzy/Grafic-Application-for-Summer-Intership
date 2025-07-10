@@ -1042,9 +1042,10 @@ class MonthlyGraphWorker(QThread):
                         logging.info(f"Tarih: {date.strftime('%d.%m.%Y')}, OEE: {oee_value * 100:.1f}%")
                 logging.info(f"----------------------------------------")
 
-                fig, ax = plt.subplots(figsize=(10, 6), dpi=100)
-                ax.set_facecolor('#f9f9f9')
-                fig.patch.set_facecolor('#f0f2f5')
+                # Grafiğin boyutunu 1020x700 piksel olarak ayarla (dpi=100 olduğu için 10.2x7.0 inç)
+                fig, ax = plt.subplots(figsize=(10.2, 7.0), dpi=100)
+                ax.set_facecolor('white')  # Arka planı beyaz yap
+                fig.patch.set_facecolor('white')  # Şekil arka planını beyaz yap
 
                 ax.spines['top'].set_visible(False)
                 ax.spines['right'].set_visible(False)
@@ -1059,29 +1060,33 @@ class MonthlyGraphWorker(QThread):
                         markeredgewidth=1.5, zorder=5)
 
                 for x, y in zip(dates, oee_values):
-                    # NaN değerleri kontrolü eklendi ve % olarak bir ondalık basamakla gösterim
-                    if pd.notna(y):
+                    # %0 olan değerlerin üzerinde "%0" belirteci olmasın
+                    if pd.notna(y) and y > 0:
                         ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, 10), ha='center',
                                     fontsize=8, fontweight='bold')
 
                 overall_calculated_average = np.mean(oee_values) if not oee_values.empty else 0
 
                 if self.prev_year_oee is not None:
-                    ax.axhline(self.prev_year_oee, color='red', linestyle='--', linewidth=1.5,
+                    # OEE değerini 0-1 aralığına ölçekle
+                    ax.axhline(self.prev_year_oee / 100, color='red', linestyle='--', linewidth=1.5,
                                label=f'Önceki Yıl OEE ({self.prev_year_oee:.1f}%)')
                 if self.prev_month_oee is not None:
-                    ax.axhline(self.prev_month_oee, color='orange', linestyle='--', linewidth=1.5,
+                    # OEE değerini 0-1 aralığına ölçekle
+                    ax.axhline(self.prev_month_oee / 100, color='orange', linestyle='--', linewidth=1.5,
                                label=f'Önceki Ay OEE ({self.prev_month_oee:.1f}%)')
                 if overall_calculated_average > 0:
-                    ax.axhline(overall_calculated_average * 100, color='purple', linestyle='--', linewidth=1.5,
+                    # overall_calculated_average zaten 0-1 aralığında
+                    ax.axhline(overall_calculated_average, color='purple', linestyle='--', linewidth=1.5,
                                label=f'Hesaplanan Ortalama OEE ({overall_calculated_average * 100:.1f}%)')
 
                 ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%d.%m.%Y'))
                 fig.autofmt_xdate(rotation=45)
 
                 ax.yaxis.set_major_formatter(PercentFormatter())
-                ax.set_ylim(bottom=0,
-                            top=1)  # Y ekseni limitini 0-1 olarak ayarladım, PercentFormatter ile %0-100 gösterilecek
+                # Y ekseni limitini 0-1 olarak ayarladım, PercentFormatter ile %0-100 gösterilecek.
+                # %0'ı daha görünür yapmak için alt limiti hafifçe negatif yap
+                ax.set_ylim(bottom=-0.05, top=1)
 
                 ax.set_xlabel("Tarih", fontsize=12, fontweight='bold')
                 ax.set_ylabel("OEE (%)", fontsize=12, fontweight='bold')
@@ -1342,7 +1347,8 @@ class MonthlyGraphsPage(QWidget):
         hat_name, fig = self.figures_data_monthly[self.current_page_monthly]
 
         canvas = FigureCanvas(fig)
-        canvas.setFixedSize(700, 460)
+        # Canvas boyutunu da grafiğin boyutuna göre ayarla
+        canvas.setFixedSize(1020, 700)
         self.monthly_chart_layout.addWidget(canvas, stretch=1)
         canvas.draw()
 
