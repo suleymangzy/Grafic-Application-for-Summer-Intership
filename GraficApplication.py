@@ -1324,6 +1324,9 @@ class MonthlyGraphsPage(QWidget):
             if pd.notna(y) and y > 0:
                 ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, 10), ha='center',
                             fontsize=8, fontweight='bold')
+            elif pd.notna(y) and y == 0:  # 0 değerleri için de etiket göster
+                ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, -15), ha='center',
+                            fontsize=8, fontweight='bold', color='gray')
 
         overall_calculated_average = np.mean(oee_values) if not oee_values.empty else 0
 
@@ -1348,6 +1351,8 @@ class MonthlyGraphsPage(QWidget):
 
         # Y ekseni limitlerini 0% ile 100% aralığına sabitle, alt limit için küçük bir boşluk bırak
         ax.set_ylim(bottom=-0.02, top=1.0)
+        # Y ekseni ana işaretçilerini %10'luk artışlarla ayarla
+        ax.set_yticks(np.arange(0.0, 1.01, 0.1))
 
         ax.set_xlabel("Tarih", fontsize=12, fontweight='bold')
         ax.set_ylabel("OEE (%)", fontsize=12, fontweight='bold')
@@ -1368,7 +1373,9 @@ class MonthlyGraphsPage(QWidget):
         chart_title = f"{hat_name} {month_name} OEE"
         ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
 
-        ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10)
+        # Legend'ı sağa, dikeyde ortaya yerleştir ve grafiğe alan aç
+        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+        fig.subplots_adjust(right=0.75)  # Grafiğin sağ kenarını küçült
 
         canvas = FigureCanvas(fig)
         # Canvas boyutunu da grafiğin boyutuna göre ayarla
