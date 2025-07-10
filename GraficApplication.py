@@ -2,15 +2,13 @@ import sys
 import logging
 import datetime
 from pathlib import Path
-import re  # Düzenli ifadeler için eklendi
+import re
 from typing import List, Tuple, Any, Union
 
 import pandas as pd
 import numpy as np
 
 import matplotlib
-
-# matplotlib.use("Agg") # Masaüstü uygulaması için yoruma alındı
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -35,13 +33,15 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QFrame,
     QCheckBox,
-    QSpacerItem,  # Import QSpacerItem for flexible spacing
-    QSizePolicy,  # Import QSizePolicy for size policies
-    QLineEdit,  # For input fields
+    QSpacerItem,
+    QSizePolicy,
+    QLineEdit,
 )
 
-GRAPHS_PER_PAGE = 1  # Her sayfada kaç grafik gösterileceği
-REQ_SHEETS = {"SMD-OEE", "ROBOT", "DALGA_LEHİM"}  # Gerekli sayfa isimleri
+# Her sayfada kaç grafik gösterileceği
+GRAPHS_PER_PAGE = 1
+# Gerekli Excel sayfa isimleri
+REQ_SHEETS = {"SMD-OEE", "ROBOT", "DALGA_LEHİM"}
 
 # Loglama ayarları
 logging.basicConfig(
@@ -56,26 +56,26 @@ plt.rcParams['font.sans-serif'] = ['SimSun', 'Arial', 'Liberation Sans', 'Bitstr
 plt.rcParams['axes.unicode_minus'] = False  # Negatif işaretler için
 
 # Global matplotlib ayarları
-plt.rcParams['axes.grid'] = True  # Bar grafiği için aşağıda özel olarak False yapılacak
+plt.rcParams['axes.grid'] = True
 plt.rcParams['grid.alpha'] = 0.7
 plt.rcParams['grid.linestyle'] = '--'
 plt.rcParams['grid.linewidth'] = 0.5
-plt.rcParams['figure.dpi'] = 100  # Ekran çözünürlüğü için
-plt.rcParams['savefig.dpi'] = 300  # Kaydedilen resim çözünürlüğü için
+plt.rcParams['figure.dpi'] = 100
+plt.rcParams['savefig.dpi'] = 300
 
-# Tick ayarları: Düz çizgiler ve bitiş noktalarında uyumlu noktalar
-plt.rcParams['xtick.direction'] = 'out'  # tick markların dışa doğru olmasını sağlar
+# Tick ayarları
+plt.rcParams['xtick.direction'] = 'out'
 plt.rcParams['ytick.direction'] = 'out'
-plt.rcParams['xtick.major.size'] = 7  # Büyük tick uzunluğu
-plt.rcParams['xtick.minor.size'] = 4  # Küçük tick uzunluğu
+plt.rcParams['xtick.major.size'] = 7
+plt.rcParams['xtick.minor.size'] = 4
 plt.rcParams['ytick.major.size'] = 7
 plt.rcParams['ytick.minor.size'] = 4
-plt.rcParams['xtick.major.width'] = 1.5  # Büyük tick kalınlığı
-plt.rcParams['xtick.minor.width'] = 1  # Küçük tick kalınlığı
-plt.rcParams['xtick.top'] = False  # Üst tickleri kapat
-plt.rcParams['ytick.right'] = False  # Sağ tickleri kapat
-plt.rcParams['axes.edgecolor'] = 'black'  # Eksen çizgisi rengi
-plt.rcParams['axes.linewidth'] = 1.5  # Eksen çizgisi kalınlığı
+plt.rcParams['xtick.major.width'] = 1.5
+plt.rcParams['xtick.minor.width'] = 1
+plt.rcParams['xtick.top'] = False
+plt.rcParams['ytick.right'] = False
+plt.rcParams['axes.edgecolor'] = 'black'
+plt.rcParams['axes.linewidth'] = 1.5
 
 
 def excel_col_to_index(col_letter: str) -> int:
@@ -89,14 +89,9 @@ def excel_col_to_index(col_letter: str) -> int:
 
 
 def seconds_from_timedelta(series: pd.Series) -> pd.Series:
-    """Pandas Serisi'ndeki zaman değerlerini saniyeye dönüştürür.
-    Çeşitli zaman formatlarını (timedelta, time objesi, HH:MM:SS string, sadece sayı) destekler.
-    Geçersiz değerleri 0 olarak işler.
-    Optimizasyon: apply kullanmadan datetime.time objelerini ve sayısal değerleri daha verimli işleme.
-    """
+    """Pandas Serisi'ndeki zaman değerlerini saniyeye dönüştürür."""
     seconds_series = pd.Series(0.0, index=series.index, dtype=float)
 
-    # Convert datetime.time objects
     is_time_obj = series.apply(lambda x: isinstance(x, datetime.time))
     if is_time_obj.any():
         time_objects = series[is_time_obj]
@@ -104,14 +99,12 @@ def seconds_from_timedelta(series: pd.Series) -> pd.Series:
             lambda t: t.hour * 3600 + t.minute * 60 + t.second + t.microsecond / 1e6
         )
 
-    # Convert timedelta objects or strings convertible to timedelta
     str_and_timedelta_mask = ~is_time_obj & series.notna()
     if str_and_timedelta_mask.any():
         converted_td = pd.to_timedelta(series.loc[str_and_timedelta_mask].astype(str).strip(), errors='coerce')
         valid_td_mask = pd.notna(converted_td)
         seconds_series.loc[str_and_timedelta_mask & valid_td_mask] = converted_td[valid_td_mask].dt.total_seconds()
 
-    # Convert numeric values (which might represent days in Excel)
     remaining_nan_mask = seconds_series.isna()
     if remaining_nan_mask.any():
         numeric_candidates = series.loc[remaining_nan_mask]
@@ -127,10 +120,10 @@ def seconds_from_timedelta(series: pd.Series) -> pd.Series:
 
 
 class GraphWorker(QThread):
-    """Grafik oluşturma işlemlerini arka planda yürüten işçi sınıfı."""
-    finished = pyqtSignal(list)  # İşlem bittiğinde sonuçları gönderir
-    progress = pyqtSignal(int)  # İlerleme bilgisini gönderir
-    error = pyqtSignal(str)  # Hata mesajını gönderir
+    """Günlük grafik oluşturma işlemlerini arka planda yürüten işçi sınıfı."""
+    finished = pyqtSignal(list)
+    progress = pyqtSignal(int)
+    error = pyqtSignal(str)
 
     def __init__(
             self,
@@ -143,10 +136,6 @@ class GraphWorker(QThread):
             selected_grouping_val: str
     ) -> None:
         super().__init__()
-        # Veri çerçevesinin bir kopyasıyla çalışmak yerine,
-        # sadece gerekli sütunları kopyalayarak bellek kullanımını optimize et.
-        # Bu iş parçacığı sadece okuma yapacaksa, kopyalama gereksiz olabilir.
-        # Ancak, güvenlik için burada kopyalama tercih ediliyor.
         self.df = df[[grouping_col_name, grouped_col_name, oee_col_name] + metric_cols].copy() if oee_col_name else \
             df[[grouping_col_name, grouped_col_name] + metric_cols].copy()
         self.grouping_col_name = grouping_col_name
@@ -159,36 +148,30 @@ class GraphWorker(QThread):
     def run(self) -> None:
         """İş parçacığı başladığında çalışacak metod."""
         try:
-            results: List[Tuple[str, pd.Series, str]] = []  # (Gruplama değeri, Metrik toplamları, OEE değeri)
-            total = len(self.grouped_values)  # Toplam işlem sayısı
+            results: List[Tuple[str, pd.Series, str]] = []
+            total = len(self.grouped_values)
 
-            # Tüm metrik sütunlarını saniyeye dönüştür (sadece bir kere yap)
             for col in self.metric_cols:
                 if col in self.df.columns:
                     self.df[col] = seconds_from_timedelta(self.df[col])
 
-            # Gruplama ve gruplanan sütunları bir kere string'e çevir
             if self.grouping_col_name in self.df.columns:
                 self.df[self.grouping_col_name] = self.df[self.grouping_col_name].astype(str)
             if self.grouped_col_name in self.df.columns:
                 self.df[self.grouped_col_name] = self.df[self.grouped_col_name].astype(str)
 
             for i, current_grouped_val in enumerate(self.grouped_values, 1):
-                # Mevcut gruplama ve gruplanan değerlere göre alt veri çerçevesini filtrele
                 subset_df_for_chart = self.df[
                     (self.df[self.grouping_col_name] == self.selected_grouping_val) &
                     (self.df[self.grouped_col_name] == current_grouped_val)
                     ]
 
-                # Metrik sütunlarının toplamlarını al
-                # Sadece mevcut sütunlarda sum al
                 sums = subset_df_for_chart[
                     [col for col in self.metric_cols if col in subset_df_for_chart.columns]].sum()
-                sums = sums[sums > 0]  # Sadece sıfırdan büyük toplamları dikkate al
+                sums = sums[sums > 0]
 
-                oee_display_value = "0%"  # Varsayılan OEE değeri
+                oee_display_value = "0%"
                 if self.oee_col_name and self.oee_col_name in subset_df_for_chart.columns and not subset_df_for_chart.empty:
-                    # OEE değerini almak için .iloc[0] yerine .values[0] kullanmak biraz daha hızlı olabilir.
                     oee_value_raw = subset_df_for_chart[self.oee_col_name].values[0]
                     if pd.notna(oee_value_raw):
                         try:
@@ -203,7 +186,7 @@ class GraphWorker(QThread):
 
                             if 0.0 <= oee_value_float <= 1.0 and oee_value_float != 0:
                                 oee_display_value = f"{oee_value_float * 100:.0f}%"
-                            elif oee_value_float > 1.0:  # Yüzde 100'den büyükse olduğu gibi göster
+                            elif oee_value_float > 1.0:
                                 oee_display_value = f"{oee_value_float:.0f}%"
                             else:
                                 oee_display_value = "0%"
@@ -212,11 +195,11 @@ class GraphWorker(QThread):
                                 f"OEE değeri dönüştürülemedi: {oee_value_raw}. Varsayılan '0%' kullanılacak.")
                             oee_display_value = "0%"
 
-                if not sums.empty:  # Eğer metrik toplamı varsa grafiğe ekle
+                if not sums.empty:
                     results.append((current_grouped_val, sums, oee_display_value))
-                self.progress.emit(int(i / total * 100))  # İlerleme bilgisini gönder
+                self.progress.emit(int(i / total * 100))
 
-            self.finished.emit(results)  # İşlem tamamlandığında sonuçları gönder
+            self.finished.emit(results)
         except Exception as exc:
             logging.exception("GraphWorker hatası oluştu.")
             self.error.emit(f"Grafik oluşturulurken bir hata oluştu: {str(exc)}")
@@ -234,34 +217,30 @@ class GraphPlotter:
             fig: plt.Figure
     ) -> None:
         """Donut grafiği oluşturur."""
-        # Donut grafiğini tüm metriklerle oluştur
         wedges, texts = ax.pie(
-            sorted_metrics_series,  # Tüm metrikler burada kullanılıyor
+            sorted_metrics_series,
             autopct=None,
             startangle=90,
             wedgeprops=dict(width=0.4, edgecolor='w'),
-            colors=chart_colors[:len(sorted_metrics_series)]  # Tüm metrikler için renkleri kullan
+            colors=chart_colors[:len(sorted_metrics_series)]
         )
 
-        # OEE değerini grafik merkezine yerleştir
         ax.text(0, 0, f"OEE\n{oee_display_value}",
                 horizontalalignment='center', verticalalignment='center',
                 fontsize=24, fontweight='bold', color='black')
 
-        # Metrik etiketlerini grafiğin solunda alt alta yerleştirme ve numaralandırma
         label_y_start = 0.25 + (30 / (fig.get_size_inches()[1] * fig.dpi))
         label_line_height = 0.05
 
-        # Yalnızca ilk 3 metriğin etiketlerini oluştur
         top_3_metrics = sorted_metrics_series.head(3)
         top_3_colors = chart_colors[:len(top_3_metrics)]
 
         for i, (metric_name, metric_value) in enumerate(top_3_metrics.items()):
             label_text = (
-                f"{i + 1}. {metric_name}; "  # Numaralandırma eklendi
+                f"{i + 1}. {metric_name}; "
                 f"{int(metric_value // 3600):02d}:"
                 f"{int((metric_value % 3600) // 60):02d}; "
-                f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%"  # Yüzdeyi genel toplama göre hesapla
+                f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%"
             )
             y_pos = label_y_start - (i * label_line_height)
             bbox_props = dict(boxstyle="round,pad=0.3", fc=top_3_colors[i], ec=top_3_colors[i], lw=0.5)
@@ -269,7 +248,7 @@ class GraphPlotter:
             luminance = (0.299 * r + 0.587 * g + 0.114 * b)
             text_color = 'white' if luminance < 0.5 else 'black'
 
-            fig.text(0.02,  # X koordinatını sola kaydır
+            fig.text(0.02,
                      y_pos,
                      label_text,
                      horizontalalignment='left',
@@ -280,8 +259,8 @@ class GraphPlotter:
                      color=text_color
                      )
 
-        ax.set_title("")  # Donut grafik için başlık yok
-        ax.axis("equal")  # Pie chart'ın daire şeklinde görünmesini sağlar
+        ax.set_title("")
+        ax.axis("equal")
         fig.tight_layout(rect=[0.25, 0.1, 1, 0.95])
 
     @staticmethod
@@ -295,33 +274,27 @@ class GraphPlotter:
         metrics = sorted_metrics_series.index.tolist()
         values = sorted_metrics_series.values.tolist()
 
-        # Saniye değerlerini dakikaya çevir
         values_minutes = [v / 60 for v in values]
 
         y_pos = np.arange(len(metrics))
 
         ax.barh(y_pos, values_minutes, color=chart_colors)
         ax.set_yticks(y_pos)
-        ax.set_yticklabels(metrics, fontsize=10)  # Y ekseni etiketlerinde numaralandırma yok
-        ax.invert_yaxis()  # En büyük değeri en üste getir
+        ax.set_yticklabels(metrics, fontsize=10)
+        ax.invert_yaxis()
 
-        # X ekseni değerlerini ve etiketlerini kaldır
         ax.set_xlabel("")
         ax.set_xticks([])
 
         ax.set_title(f"OEE: {oee_display_value}", fontsize=16, fontweight='bold')
 
-        # Grafiğin içinde bulunan hatları (grid) kaldır
         ax.grid(False)
 
-        # Bar grafiğinin genel şablonunu iki ışının birleşimi şeklinde yap
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
-        # Sol ve alt eksenler zaten varsayılan olarak görünür olmalı, ancak emin olmak için:
         ax.spines['left'].set_visible(True)
         ax.spines['bottom'].set_visible(True)
 
-        # Her barın üzerine değeri ve yüzdesini yaz
         total_sum = sorted_metrics_series.sum()
         for i, (value, metric_name) in enumerate(zip(values, metrics)):
             percentage = (value / total_sum) * 100 if total_sum > 0 else 0
@@ -329,14 +302,11 @@ class GraphPlotter:
             duration_minutes = int((value % 3600) // 60)
             text_label = f"{duration_hours:02d}:{duration_minutes:02d} ({percentage:.0f}%)"
 
-            # Metin konumunu barın dışına (sağına) al
-            # ha='left' yaparak metnin sol kenarını belirteç pozisyonuna hizala
-            # x_position'a küçük bir boşluk ekleyerek barın dışına taşı
-            text_x_position = (value / 60) + 0.5  # 0.5 dakika = 30 saniye boşluk
+            text_x_position = (value / 60) + 0.5
             ax.text(text_x_position, i, text_label,
                     va='center', ha='left',
-                    fontsize=11, fontweight='bold',  # Fontu kalın ve daha büyük yap
-                    color='black')  # Metin barın dışında olduğu için her zaman siyah olsun
+                    fontsize=11, fontweight='bold',
+                    color='black')
 
         ax.set_xlim(left=0)
         plt.tight_layout(rect=[0.1, 0.1, 0.95, 0.9])
@@ -367,18 +337,17 @@ class FileSelectionPage(QWidget):
         self.btn_browse.clicked.connect(self.browse)
         layout.addWidget(self.btn_browse)
 
-        layout.addStretch(1)  # Boşluk ekle
+        layout.addStretch(1)
 
-        # Yeni butonlar: Günlük Grafikler ve Aylık Grafikler
         h_layout_buttons = QHBoxLayout()
         self.btn_daily_graphs = QPushButton("Günlük Grafikler")
         self.btn_daily_graphs.clicked.connect(self.go_to_daily_graphs)
-        self.btn_daily_graphs.setEnabled(False)  # Enable after file selection
+        self.btn_daily_graphs.setEnabled(False)
         h_layout_buttons.addWidget(self.btn_daily_graphs)
 
         self.btn_monthly_graphs = QPushButton("Aylık Grafikler")
         self.btn_monthly_graphs.clicked.connect(self.go_to_monthly_graphs)
-        self.btn_monthly_graphs.setEnabled(False)  # Enable after file selection
+        self.btn_monthly_graphs.setEnabled(False)
         h_layout_buttons.addWidget(self.btn_monthly_graphs)
 
         layout.addLayout(h_layout_buttons)
@@ -392,7 +361,6 @@ class FileSelectionPage(QWidget):
 
         try:
             xls = pd.ExcelFile(path)
-            # İstenen sayfa isimlerinden hangilerinin dosyada olduğunu bul
             sheets = sorted(list(REQ_SHEETS.intersection(set(xls.sheet_names))))
 
             if not sheets:
@@ -404,17 +372,16 @@ class FileSelectionPage(QWidget):
             self.main_window.excel_path = Path(path)
             self.lbl_path.setText(f"Seçilen Dosya: <b>{Path(path).name}</b>")
 
-            # Bulunan sayfaları MainWindow'a kaydet
             self.main_window.available_sheets = sheets
             if "SMD-OEE" in sheets:
-                self.main_window.selected_sheet = "SMD-OEE"  # SMD-OEE varsa varsayılan olarak seç
+                self.main_window.selected_sheet = "SMD-OEE"
             elif sheets:
-                self.main_window.selected_sheet = sheets[0]  # Yoksa ilk uygun sayfayı varsayılan olarak seç
+                self.main_window.selected_sheet = sheets[0]
             else:
                 self.main_window.selected_sheet = None
 
-            self.btn_daily_graphs.setEnabled(True)  # Enable daily graphs button
-            self.btn_monthly_graphs.setEnabled(True)  # Enable monthly graphs button
+            self.btn_daily_graphs.setEnabled(True)
+            self.btn_monthly_graphs.setEnabled(True)
 
             logging.info("Dosya seçildi: %s", path)
 
@@ -425,28 +392,24 @@ class FileSelectionPage(QWidget):
 
     def go_to_daily_graphs(self) -> None:
         """Günlük grafikler sayfasına geçer."""
-        # Veri seçimi sayfasına gitmeden önce load_excel'i burada çağırmıyoruz,
-        # DataSelectionPage'in refresh metodu çağıracak.
-        self.main_window.goto_page(1)  # Veri seçimi sayfasına git (mevcut işlev)
+        self.main_window.goto_page(1)
 
     def go_to_monthly_graphs(self) -> None:
         """Aylık grafikler sayfasına geçer."""
-        # Aylık grafikler için SMD-OEE sayfasının seçili olduğundan emin ol
         if "SMD-OEE" not in self.main_window.available_sheets:
             QMessageBox.warning(self, "Uyarı", "Aylık grafikler için 'SMD-OEE' sayfası Excel dosyasında bulunmalıdır.")
             return
 
-        # Seçili sayfayı SMD-OEE olarak ayarla ve veriyi yükle
         self.main_window.selected_sheet = "SMD-OEE"
-        self.main_window.load_excel()  # SMD-OEE verisini yükle
+        self.main_window.load_excel()
 
-        self.main_window.goto_page(3)  # Aylık grafikler sayfasına git (yeni sayfa)
+        self.main_window.goto_page(3)
 
     def reset_page(self):
         """Sayfayı başlangıç durumuna döndürür."""
         self.main_window.excel_path = None
         self.main_window.selected_sheet = None
-        self.main_window.available_sheets = []  # Reset available sheets
+        self.main_window.available_sheets = []
         self.lbl_path.setText("Henüz dosya seçilmedi")
         self.btn_daily_graphs.setEnabled(False)
         self.btn_monthly_graphs.setEnabled(False)
@@ -469,19 +432,17 @@ class DataSelectionPage(QWidget):
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
 
-        # Yeni eklenen sayfa seçimi alanı
         sheet_selection_group = QHBoxLayout()
         self.sheet_selection_label = QLabel("İşlenecek Sayfa:")
         self.sheet_selection_label.setAlignment(Qt.AlignLeft)
         sheet_selection_group.addWidget(self.sheet_selection_label)
 
         self.cmb_sheet = QComboBox()
-        self.cmb_sheet.setEnabled(False)  # Başlangıçta devre dışı
+        self.cmb_sheet.setEnabled(False)
         self.cmb_sheet.currentIndexChanged.connect(self.on_sheet_selected)
         sheet_selection_group.addWidget(self.cmb_sheet)
         main_layout.addLayout(sheet_selection_group)
 
-        # Gruplama değişkeni seçimi
         grouping_group = QHBoxLayout()
         grouping_group.addWidget(QLabel("<b>Gruplama Değişkeni (Tarihler):</b>"))
         self.cmb_grouping = QComboBox()
@@ -489,16 +450,14 @@ class DataSelectionPage(QWidget):
         grouping_group.addWidget(self.cmb_grouping)
         main_layout.addLayout(grouping_group)
 
-        # Gruplanan değişkenler (ürünler) seçimi
         grouped_group = QHBoxLayout()
         grouped_group.addWidget(QLabel("<b>Gruplanan Değişkenler (Ürünler):</b>"))
         self.lst_grouped = QListWidget()
-        self.lst_grouped.setSelectionMode(QListWidget.MultiSelection)  # Çoklu seçim
+        self.lst_grouped.setSelectionMode(QListWidget.MultiSelection)
         self.lst_grouped.itemSelectionChanged.connect(self.update_next_button_state)
         grouped_group.addWidget(self.lst_grouped)
         main_layout.addLayout(grouped_group)
 
-        # Metrikler checkbox'ları
         metrics_group = QVBoxLayout()
         metrics_group.addWidget(QLabel("<b>Metrikler :</b>"))
         self.metrics_scroll_area = QScrollArea()
@@ -509,14 +468,13 @@ class DataSelectionPage(QWidget):
         metrics_group.addWidget(self.metrics_scroll_area)
         main_layout.addLayout(metrics_group)
 
-        # Navigasyon butonları
         nav_layout = QHBoxLayout()
         self.btn_back = QPushButton("← Geri")
         self.btn_back.clicked.connect(lambda: self.main_window.goto_page(0))
         nav_layout.addWidget(self.btn_back)
 
         self.btn_next = QPushButton("İleri →")
-        self.btn_next.setEnabled(False)  # Başlangıçta devre dışı
+        self.btn_next.setEnabled(False)
         self.btn_next.clicked.connect(self.go_next)
         nav_layout.addStretch(1)
         nav_layout.addWidget(self.btn_next)
@@ -524,46 +482,40 @@ class DataSelectionPage(QWidget):
 
     def refresh(self) -> None:
         """Sayfa her gösterildiğinde verileri yeniler."""
-        # Sayfa seçimi ComboBox'ını doldur
         self.cmb_sheet.clear()
         if self.main_window.available_sheets:
             self.cmb_sheet.addItems(self.main_window.available_sheets)
             self.cmb_sheet.setEnabled(True)
-            # Eğer daha önce bir sayfa seçilmişse onu ayarla
             if self.main_window.selected_sheet in self.main_window.available_sheets:
                 self.cmb_sheet.setCurrentText(self.main_window.selected_sheet)
             else:
-                # İlk uygun sayfayı varsayılan olarak seç ve sinyali tetikle
                 self.cmb_sheet.setCurrentText(self.main_window.available_sheets[0])
-            # setCurrentText zaten currentIndexChanged sinyalini tetikleyecek,
-            # bu da on_sheet_selected'ı çağırıp load_excel'i çalıştıracak.
         else:
             self.cmb_sheet.setEnabled(False)
             self.main_window.selected_sheet = None
             QMessageBox.warning(self, "Uyarı", "Seçilen Excel dosyasında uygun sayfa bulunamadı.")
-            self.main_window.goto_page(0)  # Dosya seçimine geri dön
+            self.main_window.goto_page(0)
             return
 
     def on_sheet_selected(self) -> None:
         """Sayfa seçimi değiştiğinde ana penceredeki seçimi günceller ve veriyi yeniden yükler."""
         self.main_window.selected_sheet = self.cmb_sheet.currentText()
-        self.main_window.load_excel()  # Yeni seçilen sayfaya göre veriyi yeniden yükle
-        self._populate_data_selection_fields()  # Sayfanın diğer alanlarını yeniden doldur
+        self.main_window.load_excel()
+        self._populate_data_selection_fields()
 
     def _populate_data_selection_fields(self):
         """Gruplama, gruplanan ve metrik alanlarını doldurur."""
         df = self.main_window.df
         if df.empty:
             QMessageBox.critical(self, "Hata", "Veri yüklenemedi. Lütfen dosyayı kontrol edin.")
-            self.main_window.goto_page(0)  # Dosya seçimine geri dön
+            self.main_window.goto_page(0)
             return
 
-        # Gruplama sütunu doldur
         self.cmb_grouping.clear()
         grouping_col_name = self.main_window.grouping_col_name
         if grouping_col_name and grouping_col_name in df.columns:
             grouping_vals = sorted(df[grouping_col_name].dropna().astype(str).unique())
-            grouping_vals = [s for s in grouping_vals if s.strip()]  # Boş stringleri filtrele
+            grouping_vals = [s for s in grouping_vals if s.strip()]
             self.cmb_grouping.addItems(grouping_vals)
             if not grouping_vals:
                 QMessageBox.warning(self, "Uyarı", "Gruplama sütunu (A) boş veya geçerli değer içermiyor.")
@@ -572,7 +524,7 @@ class DataSelectionPage(QWidget):
             self.cmb_grouping.clear()
             self.lst_grouped.clear()
             self.clear_metrics_checkboxes()
-            self.update_next_button_state()  # Update button state after clearing
+            self.update_next_button_state()
             return
 
         self.populate_metrics_checkboxes()
@@ -585,14 +537,13 @@ class DataSelectionPage(QWidget):
         df = self.main_window.df
 
         if selected_grouping_val and self.main_window.grouping_col_name and self.main_window.grouped_col_name:
-            # Optimize by filtering directly without `astype(str)` if already converted or if not needed
             filtered_df = df[df[self.main_window.grouping_col_name].astype(str) == selected_grouping_val]
             grouped_vals = sorted(filtered_df[self.main_window.grouped_col_name].dropna().astype(str).unique())
             grouped_vals = [s for s in grouped_vals if s.strip()]
 
             for gv in grouped_vals:
                 item = QListWidgetItem(gv)
-                item.setSelected(True)  # Varsayılan olarak hepsini seç
+                item.setSelected(True)
                 self.lst_grouped.addItem(item)
 
         self.update_next_button_state()
@@ -626,7 +577,6 @@ class DataSelectionPage(QWidget):
             checkbox.stateChanged.connect(self.on_metric_checkbox_changed)
             self.metrics_layout.addWidget(checkbox)
 
-        # Add a stretch to push checkboxes to the top
         self.metrics_layout.addStretch(1)
         self.update_next_button_state()
 
@@ -637,7 +587,7 @@ class DataSelectionPage(QWidget):
             widget = item.widget()
             if widget:
                 widget.deleteLater()
-            elif isinstance(item, QSpacerItem):  # Also remove spacers if any
+            elif isinstance(item, QSpacerItem):
                 self.metrics_layout.removeItem(item)
 
     def on_metric_checkbox_changed(self, state):
@@ -667,7 +617,7 @@ class DataSelectionPage(QWidget):
         if not self.main_window.grouped_values or not self.main_window.selected_metrics:
             QMessageBox.warning(self, "Seçim Eksik", "Lütfen en az bir gruplanan değişken ve bir metrik seçin.")
             return
-        self.main_window.goto_page(2)  # Grafik sayfasına git (Günlük Grafiklerin gösterildiği sayfa)
+        self.main_window.goto_page(2)
 
 
 class DailyGraphsPage(QWidget):
@@ -677,9 +627,9 @@ class DailyGraphsPage(QWidget):
         super().__init__()
         self.main_window = main_window
         self.worker: GraphWorker | None = None
-        self.figures_data: List[Tuple[str, Figure, str]] = []  # (Ürün adı, figür objesi, OEE değeri)
-        self.current_page = 0  # Mevcut sayfa numarası
-        self.current_graph_type = "Donut"  # Varsayılan grafik tipi
+        self.figures_data: List[Tuple[str, Figure, str]] = []
+        self.current_page = 0
+        self.current_graph_type = "Donut"
         self.init_ui()
 
     def init_ui(self):
@@ -694,10 +644,9 @@ class DailyGraphsPage(QWidget):
         self.progress = QProgressBar()
         self.progress.setAlignment(Qt.AlignCenter)
         self.progress.setTextVisible(True)
-        self.progress.hide()  # Başlangıçta gizle
+        self.progress.hide()
         main_layout.addWidget(self.progress)
 
-        # Üst navigasyon ve kaydet butonu
         nav_top = QHBoxLayout()
         self.btn_back = QPushButton("← Veri Seçimi")
         self.btn_back.clicked.connect(lambda: self.main_window.goto_page(1))
@@ -708,10 +657,9 @@ class DailyGraphsPage(QWidget):
         self.lbl_chart_info.setStyleSheet("font-weight: bold; font-size: 12pt;")
         nav_top.addWidget(self.lbl_chart_info)
 
-        # Grafik tipi seçimi için ComboBox
         self.cmb_graph_type = QComboBox()
         self.cmb_graph_type.addItems(["Donut", "Bar"])
-        self.cmb_graph_type.setCurrentText(self.current_graph_type)  # Varsayılanı ayarla
+        self.cmb_graph_type.setCurrentText(self.current_graph_type)
         self.cmb_graph_type.currentIndexChanged.connect(self.on_graph_type_changed)
         nav_top.addWidget(self.cmb_graph_type)
 
@@ -727,7 +675,6 @@ class DailyGraphsPage(QWidget):
         nav_top.addWidget(self.btn_save_image)
         main_layout.addLayout(nav_top)
 
-        # Grafiklerin gösterileceği kaydırılabilir alan
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.canvas_holder = QWidget()
@@ -740,7 +687,6 @@ class DailyGraphsPage(QWidget):
         self.scroll.setWidget(self.canvas_holder)
         main_layout.addWidget(self.scroll)
 
-        # Alt navigasyon butonları (önceki/sonraki sayfa)
         nav_bottom = QHBoxLayout()
         nav_bottom.addStretch(1)
         self.btn_prev = QPushButton("← Önceki Sayfa")
@@ -758,7 +704,7 @@ class DailyGraphsPage(QWidget):
     def on_graph_type_changed(self, index: int) -> None:
         """Grafik tipi değiştiğinde çağrılır ve grafikleri yeniden çizer."""
         self.current_graph_type = self.cmb_graph_type.currentText()
-        self.enter_page()  # Re-generate graphs with the new type
+        self.enter_page()
 
     def on_results(self, results: List[Tuple[str, pd.Series, str]]) -> None:
         """GraphWorker'dan gelen sonuçları işler ve grafikleri oluşturur."""
@@ -799,7 +745,7 @@ class DailyGraphsPage(QWidget):
             total_duration_seconds = sorted_metrics_series.sum()
             total_duration_hours = int(total_duration_seconds // 3600)
             total_duration_minutes = int((total_duration_seconds % 3600) // 60)
-            total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİKA"
+            total_duration_text = f"TOPLAM DURUŞ\n{total_duration_hours} SAAT {total_duration_minutes} DAKİDA"
 
             fig.text(0.01, 0.05, total_duration_text, transform=fig.transFigure,
                      fontsize=14, fontweight='bold', verticalalignment='bottom')
@@ -816,11 +762,11 @@ class DailyGraphsPage(QWidget):
         self.figures_data.clear()
         self.clear_canvases()
         self.progress.setValue(0)
-        self.progress.show()  # Show progress bar when starting
+        self.progress.show()
         self.btn_save_image.setEnabled(False)
         self.lbl_chart_info.setText("Grafikler oluşturuluyor...")
-        self.update_page_label()  # Reset page label
-        self.update_navigation_buttons()  # Disable navigation buttons
+        self.update_page_label()
+        self.update_navigation_buttons()
 
         if self.worker and self.worker.isRunning():
             self.worker.quit()
@@ -862,7 +808,6 @@ class DailyGraphsPage(QWidget):
 
         total_pages = (len(self.figures_data) + GRAPHS_PER_PAGE - 1) // GRAPHS_PER_PAGE if self.figures_data else 0
 
-        # Ensure current_page is within valid range
         if self.current_page >= total_pages and total_pages > 0:
             self.current_page = total_pages - 1
         elif total_pages == 0:
@@ -948,7 +893,7 @@ class DailyGraphsPage(QWidget):
 
 class MonthlyGraphWorker(QThread):
     """Aylık grafik oluşturma işlemlerini arka planda yürüten işçi sınıfı."""
-    finished = pyqtSignal(list)  # List of (hat_name, figure_object)
+    finished = pyqtSignal(list)
     progress = pyqtSignal(int)
     error = pyqtSignal(str)
 
@@ -963,14 +908,14 @@ class MonthlyGraphWorker(QThread):
         self.prev_month_oee = prev_month_oee
 
     def run(self):
+        """İş parçacığı başladığında çalışacak metod."""
         try:
             figures_data: List[Tuple[str, Figure]] = []
 
             df_smd_oee = self.df
             logging.info(f"MonthlyGraphWorker: Başlangıç veri çerçevesi boyutu: {df_smd_oee.shape}")
 
-            # Rename columns for internal consistency within this function
-            # Check if columns exist before renaming
+            # Sütunları dahili tutarlılık için yeniden adlandır
             col_mapping = {}
             if self.grouped_col_name in df_smd_oee.columns:
                 col_mapping[self.grouped_col_name] = 'U_Agaci_Sev'
@@ -986,7 +931,7 @@ class MonthlyGraphWorker(QThread):
                 self.error.emit("Gerekli sütunlar (Ürün, Tarih, OEE) Excel dosyasında bulunamadı veya adlandırılamadı.")
                 return
 
-            # Convert 'Tarih' to datetime and filter out NaT
+            # 'Tarih' sütununu datetime'a dönüştür ve geçersiz tarihleri temizle
             if 'Tarih' in df_smd_oee.columns:
                 df_smd_oee['Tarih'] = pd.to_datetime(df_smd_oee['Tarih'], errors='coerce')
                 df_smd_oee.dropna(subset=['Tarih'], inplace=True)
@@ -996,21 +941,27 @@ class MonthlyGraphWorker(QThread):
                 self.error.emit("'Tarih' sütunu bulunamadı.")
                 return
 
-            # Convert 'OEE_Degeri' to float using pd.to_numeric
+            # 'OEE_Degeri' sütununu float'a dönüştür
             if 'OEE_Degeri' in df_smd_oee.columns:
-                # Replace comma with dot for decimal conversion and handle non-numeric values
+                logging.info(
+                    f"MonthlyGraphWorker: 'OEE_Degeri' sütunu dönüştürme öncesi ilk 5 değer ve tipleri:\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
+
                 df_smd_oee['OEE_Degeri'] = pd.to_numeric(
                     df_smd_oee['OEE_Degeri'].astype(str).str.replace('%', '').str.replace(',', '.'),
                     errors='coerce'
                 )
-                df_smd_oee.dropna(subset=['OEE_Degeri'], inplace=True)
+                # NaN değerleri 0.0 ile doldur
+                df_smd_oee['OEE_Degeri'].fillna(0.0, inplace=True)
+
                 logging.info(
-                    f"MonthlyGraphWorker: OEE_Degeri sütunu float'a dönüştürüldü ve geçersiz değerler temizlendi. Yeni boyut: {df_smd_oee.shape}")
+                    f"MonthlyGraphWorker: 'OEE_Degeri' sütunu dönüştürme sonrası ve NaN doldurma sonrası ilk 5 değer ve tipleri:\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
+                logging.info(
+                    f"MonthlyGraphWorker: OEE_Degeri sütunu float'a dönüştürüldü ve geçersiz/boş değerler 0.0 ile dolduruldu. Yeni boyut: {df_smd_oee.shape}")
             else:
                 self.error.emit("'OEE_Degeri' sütunu bulunamadı.")
                 return
 
-            # Extract 'Group_Key' (e.g., "HAT-4")
+            # 'Group_Key' (örn: "HAT-4") çıkar
             def extract_group_key(s):
                 s = str(s).upper()
                 match = re.search(r'HAT(\d+)', s)
@@ -1021,8 +972,7 @@ class MonthlyGraphWorker(QThread):
 
             if 'U_Agaci_Sev' in df_smd_oee.columns:
                 df_smd_oee['Group_Key'] = df_smd_oee['U_Agaci_Sev'].apply(extract_group_key)
-                df_smd_oee.dropna(subset=['Group_Key'],
-                                  inplace=True)  # Remove rows where Group_Key couldn't be extracted
+                df_smd_oee.dropna(subset=['Group_Key'], inplace=True)
                 logging.info(
                     f"MonthlyGraphWorker: Group_Key sütunu oluşturuldu ve boş değerler temizlendi. Yeni boyut: {df_smd_oee.shape}")
             else:
@@ -1031,7 +981,7 @@ class MonthlyGraphWorker(QThread):
 
             unique_hats = sorted(df_smd_oee['Group_Key'].unique())
 
-            # Filter unique_hats to include only HAT-1, HAT-2, HAT-3, HAT-4
+            # Yalnızca HAT-1, HAT-2, HAT-3, HAT-4'ü filtrele
             target_hat_patterns = {"HAT-1", "HAT-2", "HAT-3", "HAT-4"}
             filtered_hats = [hat for hat in unique_hats if hat in target_hat_patterns]
             unique_hats = sorted(filtered_hats)
@@ -1054,9 +1004,24 @@ class MonthlyGraphWorker(QThread):
                     self.progress.emit(int((i + 1) / total_hats * 100))
                     continue
 
-                # Group by date and calculate mean OEE for the selected hat
+                # Tarihe göre grupla ve OEE ortalamasını hesapla
                 grouped_oee = df_smd_oee_filtered_by_hat.groupby(pd.Grouper(key='Tarih', freq='D'))[
                     'OEE_Degeri'].mean().reset_index()
+
+                # Minimum ve maksimum tarihleri bul
+                min_date = df_smd_oee_filtered_by_hat['Tarih'].min()
+                max_date = df_smd_oee_filtered_by_hat['Tarih'].max()
+
+                # Tam tarih aralığını oluştur
+                full_date_range = pd.date_range(start=min_date, end=max_date, freq='D')
+
+                # grouped_oee DataFrame'ini tam tarih aralığına göre yeniden indeksle
+                # ve eksik tarihleri 0.0 ile doldur
+                grouped_oee = grouped_oee.set_index('Tarih').reindex(full_date_range).fillna(0.0).reset_index()
+                grouped_oee.rename(columns={'index': 'Tarih'}, inplace=True)  # Yeniden adlandırma
+
+                logging.info(
+                    f"MonthlyGraphWorker: '{selected_hat}' için günlük OEE ortalamaları (gruplama ve reindex sonrası):\n{grouped_oee.to_string()}")
 
                 if grouped_oee.empty:
                     logging.warning(
@@ -1068,6 +1033,14 @@ class MonthlyGraphWorker(QThread):
 
                 dates = grouped_oee_sorted['Tarih']
                 oee_values = grouped_oee_sorted['OEE_Degeri']
+
+                # Gün gün OEE değerlerini konsola yazdır
+                logging.info(f"--- Günlük OEE Değerleri ({selected_hat}) ---")
+                for date, oee_value in zip(dates, oee_values):
+                    if pd.notna(oee_value):
+                        # OEE değerini % olarak ve bir ondalık basamakla yazdır
+                        logging.info(f"Tarih: {date.strftime('%d.%m.%Y')}, OEE: {oee_value * 100:.1f}%")
+                logging.info(f"----------------------------------------")
 
                 fig, ax = plt.subplots(figsize=(10, 6), dpi=100)
                 ax.set_facecolor('#f9f9f9')
@@ -1086,8 +1059,10 @@ class MonthlyGraphWorker(QThread):
                         markeredgewidth=1.5, zorder=5)
 
                 for x, y in zip(dates, oee_values):
-                    ax.annotate(f'{y:.0f}%', (x, y), textcoords="offset points", xytext=(0, 10), ha='center',
-                                fontsize=8, fontweight='bold')
+                    # NaN değerleri kontrolü eklendi ve % olarak bir ondalık basamakla gösterim
+                    if pd.notna(y):
+                        ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, 10), ha='center',
+                                    fontsize=8, fontweight='bold')
 
                 overall_calculated_average = np.mean(oee_values) if not oee_values.empty else 0
 
@@ -1098,27 +1073,29 @@ class MonthlyGraphWorker(QThread):
                     ax.axhline(self.prev_month_oee, color='orange', linestyle='--', linewidth=1.5,
                                label=f'Önceki Ay OEE ({self.prev_month_oee:.1f}%)')
                 if overall_calculated_average > 0:
-                    ax.axhline(overall_calculated_average, color='purple', linestyle='--', linewidth=1.5,
-                               label=f'Hesaplanan Ortalama OEE ({overall_calculated_average:.1f}%)')
+                    ax.axhline(overall_calculated_average * 100, color='purple', linestyle='--', linewidth=1.5,
+                               label=f'Hesaplanan Ortalama OEE ({overall_calculated_average * 100:.1f}%)')
 
                 ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%d.%m.%Y'))
                 fig.autofmt_xdate(rotation=45)
 
                 ax.yaxis.set_major_formatter(PercentFormatter())
-                ax.set_ylim(bottom=0)
+                ax.set_ylim(bottom=0,
+                            top=1)  # Y ekseni limitini 0-1 olarak ayarladım, PercentFormatter ile %0-100 gösterilecek
 
                 ax.set_xlabel("Tarih", fontsize=12, fontweight='bold')
                 ax.set_ylabel("OEE (%)", fontsize=12, fontweight='bold')
 
                 first_date_in_data = dates.min()
-                month_name = first_date_in_data.strftime('%B').capitalize()
+                month_name = first_date_in_data.strftime(
+                    '%B').capitalize() if not dates.empty else datetime.date.today().strftime('%B').capitalize()
                 chart_title = f"{selected_hat} {month_name} OEE"
                 ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
 
                 ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10)
 
                 figures_data.append((selected_hat, fig))
-                plt.close(fig)  # Close the figure to free up memory
+                plt.close(fig)
 
                 self.progress.emit(int((i + 1) / total_hats * 100))
                 logging.info(
@@ -1138,13 +1115,12 @@ class MonthlyGraphsPage(QWidget):
         super().__init__()
         self.main_window = main_window
 
-        # Initialize chart container and layout first to avoid AttributeError
         self.monthly_chart_container = QFrame(objectName="chartContainer")
         self.monthly_chart_layout = QVBoxLayout(self.monthly_chart_container)
-        self.monthly_chart_layout.setAlignment(Qt.AlignCenter)  # Center the content
+        self.monthly_chart_layout.setAlignment(Qt.AlignCenter)
 
-        self.current_monthly_chart_figure = None  # To store the monthly chart for saving
-        self.figures_data_monthly: List[Tuple[str, Figure]] = []  # (Hat adı, figür objesi)
+        self.current_monthly_chart_figure = None
+        self.figures_data_monthly: List[Tuple[str, Figure]] = []
         self.current_page_monthly = 0
         self.monthly_worker: MonthlyGraphWorker | None = None
 
@@ -1159,7 +1135,6 @@ class MonthlyGraphsPage(QWidget):
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
 
-        # Grafik tipi seçimi
         graph_type_selection_layout = QHBoxLayout()
         graph_type_selection_layout.addWidget(QLabel("<b>Grafik Tipi:</b>"))
         self.cmb_monthly_graph_type = QComboBox()
@@ -1168,11 +1143,9 @@ class MonthlyGraphsPage(QWidget):
         graph_type_selection_layout.addWidget(self.cmb_monthly_graph_type)
         main_layout.addLayout(graph_type_selection_layout)
 
-        # OEE Grafikleri için özel alanlar
         self.oee_options_widget = QWidget()
         oee_options_layout = QVBoxLayout(self.oee_options_widget)
 
-        # Önceki Yılın OEE Değeri
         prev_year_oee_layout = QHBoxLayout()
         prev_year_oee_layout.addWidget(QLabel("Önceki Yılın OEE Değeri (%):"))
         self.txt_prev_year_oee = QLineEdit()
@@ -1180,7 +1153,6 @@ class MonthlyGraphsPage(QWidget):
         prev_year_oee_layout.addWidget(self.txt_prev_year_oee)
         oee_options_layout.addLayout(prev_year_oee_layout)
 
-        # Önceki Ayın OEE Değeri
         prev_month_oee_layout = QHBoxLayout()
         prev_month_oee_layout.addWidget(QLabel("Önceki Ayın OEE Değeri (%):"))
         self.txt_prev_month_oee = QLineEdit()
@@ -1188,29 +1160,25 @@ class MonthlyGraphsPage(QWidget):
         prev_month_oee_layout.addWidget(self.txt_prev_month_oee)
         oee_options_layout.addLayout(prev_month_oee_layout)
 
-        # Hat Grafikleri ve Sayfa Grafikleri butonları
         oee_buttons_layout = QHBoxLayout()
         self.btn_line_chart = QPushButton("Hat Grafikleri")
-        self.btn_line_chart.clicked.connect(self._start_monthly_graph_worker)
-        self.btn_line_chart.setEnabled(False)  # Initially disabled until a graph type is selected
+        self.btn_line_chart.clicked.connect(self._start_monthly_graph_worker)  # İşlevsellik yeniden bağlandı
+        self.btn_line_chart.setEnabled(False)  # Başlangıçta devre dışı
         oee_buttons_layout.addWidget(self.btn_line_chart)
 
         self.btn_page_chart = QPushButton("Sayfa Grafikleri")
-        self.btn_page_chart.setEnabled(False)  # Not implemented yet
+        self.btn_page_chart.setEnabled(False)
         oee_buttons_layout.addWidget(self.btn_page_chart)
         oee_options_layout.addLayout(oee_buttons_layout)
 
         main_layout.addWidget(self.oee_options_widget)
 
-        # Diğer grafik tipleri için placeholder (şimdilik gizli)
         self.other_graphs_widget = QWidget()
         other_graphs_layout = QVBoxLayout(self.other_graphs_widget)
         other_graphs_layout.addWidget(QLabel("Bu grafik tipi için seçenekler burada olacak."))
         main_layout.addWidget(self.other_graphs_widget)
         self.other_graphs_widget.hide()
 
-        # Grafik görüntüleme alanı
-        # self.monthly_chart_container ve self.monthly_chart_layout zaten __init__ içinde tanımlandı
         self.monthly_chart_container.setMinimumHeight(460)
         main_layout.addWidget(self.monthly_chart_container)
 
@@ -1220,7 +1188,6 @@ class MonthlyGraphsPage(QWidget):
         self.monthly_progress.hide()
         main_layout.addWidget(self.monthly_progress)
 
-        # Alt navigasyon butonları (önceki/sonraki sayfa)
         nav_bottom = QHBoxLayout()
         self.btn_monthly_back = QPushButton("← Geri")
         self.btn_monthly_back.clicked.connect(lambda: self.main_window.goto_page(0))
@@ -1247,7 +1214,7 @@ class MonthlyGraphsPage(QWidget):
         nav_bottom.addWidget(self.btn_save_monthly_chart)
         main_layout.addLayout(nav_bottom)
 
-        self.on_monthly_graph_type_changed(0)  # Set initial visibility
+        self.on_monthly_graph_type_changed(0)
 
     def enter_page(self) -> None:
         """Bu sayfaya girildiğinde grafiği temizler ve buton durumlarını günceller."""
@@ -1255,7 +1222,7 @@ class MonthlyGraphsPage(QWidget):
         self.btn_save_monthly_chart.setEnabled(False)
         self.update_monthly_page_label()
         self.update_monthly_navigation_buttons()
-        # Enable line chart button if OEE Graphs is selected
+        # Sadece OEE Grafikleri seçeneği aktifken Hat Grafikleri butonu aktif olacak
         if self.cmb_monthly_graph_type.currentText() == "OEE Grafikleri":
             self.btn_line_chart.setEnabled(True)
         else:
@@ -1267,16 +1234,15 @@ class MonthlyGraphsPage(QWidget):
         if selected_type == "OEE Grafikleri":
             self.oee_options_widget.show()
             self.other_graphs_widget.hide()
-            self.btn_line_chart.setEnabled(True)  # Enable line chart button for OEE
+            self.btn_line_chart.setEnabled(True)  # OEE Grafikleri seçildiğinde Hat Grafikleri aktif
         else:
             self.oee_options_widget.hide()
             self.other_graphs_widget.show()
-            self.btn_line_chart.setEnabled(False)  # Disable for other types
+            self.btn_line_chart.setEnabled(False)  # Diğer tiplerde devre dışı
 
-        # Clear existing chart when graph type changes
         self.clear_monthly_chart_canvas()
         self.btn_save_monthly_chart.setEnabled(False)
-        self.figures_data_monthly.clear()  # Clear stored figures
+        self.figures_data_monthly.clear()
         self.current_page_monthly = 0
         self.update_monthly_page_label()
         self.update_monthly_navigation_buttons()
@@ -1304,11 +1270,14 @@ class MonthlyGraphsPage(QWidget):
             self.monthly_worker.quit()
             self.monthly_worker.wait()
 
+        prev_year_oee = None
+        prev_month_oee = None
+
         try:
-            prev_year_oee = float(
-                self.txt_prev_year_oee.text().replace(",", ".")) if self.txt_prev_year_oee.text() else None
-            prev_month_oee = float(
-                self.txt_prev_month_oee.text().replace(",", ".")) if self.txt_prev_month_oee.text() else None
+            if self.txt_prev_year_oee.text():
+                prev_year_oee = float(self.txt_prev_year_oee.text().replace(",", "."))
+            if self.txt_prev_month_oee.text():
+                prev_month_oee = float(self.txt_prev_month_oee.text().replace(",", "."))
         except ValueError:
             QMessageBox.warning(self, "Geçersiz Giriş",
                                 "Lütfen Önceki Yıl/Ay OEE değerlerini geçerli sayı olarak girin.")
@@ -1356,7 +1325,6 @@ class MonthlyGraphsPage(QWidget):
 
         total_pages = len(self.figures_data_monthly)
 
-        # Ensure current_page_monthly is within valid range
         if self.current_page_monthly >= total_pages and total_pages > 0:
             self.current_page_monthly = total_pages - 1
         elif total_pages == 0:
@@ -1374,11 +1342,11 @@ class MonthlyGraphsPage(QWidget):
         hat_name, fig = self.figures_data_monthly[self.current_page_monthly]
 
         canvas = FigureCanvas(fig)
-        canvas.setFixedSize(700, 460)  # Fixed size for consistency
+        canvas.setFixedSize(700, 460)
         self.monthly_chart_layout.addWidget(canvas, stretch=1)
         canvas.draw()
 
-        self.current_monthly_chart_figure = fig  # Store for saving
+        self.current_monthly_chart_figure = fig
         self.btn_save_monthly_chart.setEnabled(True)
         self.update_monthly_page_label()
         self.update_monthly_navigation_buttons()
@@ -1413,7 +1381,6 @@ class MonthlyGraphsPage(QWidget):
             QMessageBox.warning(self, "Kaydedilecek Grafik Yok", "Görüntülenecek bir aylık grafik bulunmamaktadır.")
             return
 
-        # Get the hat name for the current chart to use in the filename
         current_hat_name = "grafik"
         if self.figures_data_monthly and 0 <= self.current_page_monthly < len(self.figures_data_monthly):
             current_hat_name = self.figures_data_monthly[self.current_page_monthly][0].replace(" ", "_").replace("/",
@@ -1442,46 +1409,46 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.excel_path: Path | None = None
         self.selected_sheet: str | None = None
-        self.available_sheets: List[str] = []  # Yeni eklendi: uygun sayfaların listesi
+        self.available_sheets: List[str] = []
         self.df: pd.DataFrame = pd.DataFrame()
-        self.grouping_col_name: str | None = None  # For daily graphs and monthly OEE
-        self.grouped_col_name: str | None = None  # For daily graphs and monthly OEE (e.g., 'Ürün' column)
-        self.metric_cols: List[str] = []  # For daily graphs
-        self.oee_col_name: str | None = None  # For daily graphs and monthly OEE
-        self.selected_grouping_val: str | None = None  # For daily graphs
-        self.grouped_values: List[str] = []  # For daily graphs
-        self.selected_metrics: List[str] = []  # For daily graphs
+        self.grouping_col_name: str | None = None
+        self.grouped_col_name: str | None = None
+        self.metric_cols: List[str] = []
+        self.oee_col_name: str | None = None
+        self.selected_grouping_val: str | None = None
+        self.grouped_values: List[str] = []
+        self.selected_metrics: List[str] = []
 
         self.stacked_widget = QStackedWidget()
         self.file_selection_page = FileSelectionPage(self)
-        self.data_selection_page = DataSelectionPage(self)  # Daily graphs data selection
-        self.daily_graphs_page = DailyGraphsPage(self)  # Daily graphs display
-        self.monthly_graphs_page = MonthlyGraphsPage(self)  # New monthly graphs page
+        self.data_selection_page = DataSelectionPage(self)
+        self.daily_graphs_page = DailyGraphsPage(self)
+        self.monthly_graphs_page = MonthlyGraphsPage(self)
 
         self.stacked_widget.addWidget(self.file_selection_page)
         self.stacked_widget.addWidget(self.data_selection_page)
         self.stacked_widget.addWidget(self.daily_graphs_page)
-        self.stacked_widget.addWidget(self.monthly_graphs_page)  # Add new page
+        self.stacked_widget.addWidget(self.monthly_graphs_page)
 
         self.setCentralWidget(self.stacked_widget)
         self.setWindowTitle("OEE ve Durum Grafiği Uygulaması")
-        self.setGeometry(100, 100, 1200, 800)  # Pencere boyutunu ayarla
+        self.setGeometry(100, 100, 1200, 800)
 
         self.apply_stylesheet()
-        self.goto_page(0)  # Başlangıçta dosya seçimi sayfasına git
+        self.goto_page(0)
 
     def apply_stylesheet(self):
         """Uygulamaya modern bir stil uygular."""
         self.setStyleSheet("""
             QWidget {
-                background-color: #f0f2f5; /* Açık gri arkaplan */
-                font-family: 'Segoe UI', Arial, sans-serif; /* Modern font */
+                background-color: #f0f2f5;
+                font-family: 'Segoe UI', Arial, sans-serif;
                 color: #333333;
             }
             QLabel#title_label {
-                font-size: 28pt; /* Slightly larger title */
+                font-size: 28pt;
                 font-weight: bold;
-                color: #2c3e50; /* Koyu gri/mavi başlık */
+                color: #2c3e50;
                 margin-bottom: 25px;
                 padding: 10px;
             }
@@ -1489,46 +1456,46 @@ class MainWindow(QMainWindow):
                 font-size: 11pt;
             }
             QPushButton {
-                background-color: #3498db; /* Mavi tonu */
+                background-color: #3498db;
                 color: white;
-                padding: 12px 25px; /* Daha büyük padding */
-                border-radius: 8px; /* Daha yumuşak kenarlar */
+                padding: 12px 25px;
+                border-radius: 8px;
                 border: none;
                 font-weight: bold;
                 font-size: 11pt;
-                margin: 8px; /* Daha fazla dış boşluk */
-                box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2); /* Hafif gölge */
+                margin: 8px;
+                box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
             }
             QPushButton:hover {
-                background-color: #2980b9; /* Koyu mavi tonu */
-                box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3); /* Daha belirgin gölge */
+                background-color: #2980b9;
+                box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
             }
             QPushButton:pressed {
-                background-color: #21618c; /* Daha da koyu */
+                background-color: #21618c;
             }
             QPushButton:disabled {
-                background-color: #cccccc; /* Gri devre dışı buton */
+                background-color: #cccccc;
                 color: #666666;
                 box-shadow: none;
             }
             QComboBox, QListWidget, QScrollArea, QProgressBar, QFrame, QLineEdit {
-                border: 1px solid #dcdcdc; /* Daha yumuşak kenarlık */
-                border-radius: 6px; /* Daha yumuşak kenarlar */
-                padding: 8px; /* Daha fazla iç boşluk */
+                border: 1px solid #dcdcdc;
+                border-radius: 6px;
+                padding: 8px;
                 background-color: white;
-                selection-background-color: #aed6f1; /* Seçim rengi */
+                selection-background-color: #aed6f1;
                 selection-color: black;
             }
             QComboBox::drop-down {
-                border: 0px; /* Okun kenarlığını kaldır */
+                border: 0px;
             }
             QComboBox::down-arrow {
-                image: url(down_arrow.png); /* Özel ok ikonu kullanılabilir */
+                image: url(down_arrow.png);
                 width: 12px;
                 height: 12px;
             }
             QListWidget::item {
-                padding: 5px; /* Daha fazla item boşluğu */
+                padding: 5px;
             }
             QListWidget::item:selected {
                 background-color: #3498db;
@@ -1536,7 +1503,7 @@ class MainWindow(QMainWindow):
                 border-radius: 3px;
             }
             QCheckBox {
-                spacing: 8px; /* Daha fazla boşluk */
+                spacing: 8px;
                 padding: 5px;
                 font-size: 10pt;
             }
@@ -1550,7 +1517,7 @@ class MainWindow(QMainWindow):
             QCheckBox::indicator:checked {
                 background-color: #3498db;
                 border: 1px solid #2980b9;
-                image: url(check_mark.png); /* Özel onay işareti ikonu kullanılabilir */
+                image: url(check_mark.png);
             }
             QMessageBox {
                 background-color: #ffffff;
@@ -1565,11 +1532,10 @@ class MainWindow(QMainWindow):
                 margin: 10px 0;
             }
             QProgressBar::chunk {
-                background-color: #2ecc71; /* Yeşil ilerleme çubuğu */
+                background-color: #2ecc71;
                 border-radius: 7px;
             }
-            /* Scrollbar styling */
-            QScrollArea > QWidget > QWidget { /* Targets the content widget within QScrollArea */
+            QScrollArea > QWidget > QWidget {
                 background-color: white;
             }
             QScrollBar:vertical {
@@ -1595,11 +1561,11 @@ class MainWindow(QMainWindow):
     def goto_page(self, index: int) -> None:
         """Belirli bir sayfaya geçiş yapar ve sayfayı yeniler."""
         self.stacked_widget.setCurrentIndex(index)
-        if index == 1:  # Günlük grafikler için veri seçimi sayfası
+        if index == 1:
             self.data_selection_page.refresh()
-        elif index == 2:  # Günlük grafikler görüntüleme sayfası
+        elif index == 2:
             self.daily_graphs_page.enter_page()
-        elif index == 3:  # Aylık grafikler sayfası
+        elif index == 3:
             self.monthly_graphs_page.enter_page()
 
     def load_excel(self) -> None:
@@ -1608,44 +1574,31 @@ class MainWindow(QMainWindow):
             logging.warning("load_excel: Excel yolu veya seçili sayfa boş. Veri yüklenemiyor.")
             return
 
-        # Eğer veri zaten yüklenmişse ve aynı dosya/sayfa ise tekrar yükleme
         if not self.df.empty and self.df.attrs.get('excel_path') == self.excel_path and \
                 self.df.attrs.get('selected_sheet') == self.selected_sheet:
             logging.info(f"Veri '{self.selected_sheet}' sayfasından zaten yüklü. Tekrar yüklenmiyor.")
             return
 
         try:
-            # Load with header=None and skiprows=[0] to treat first row as data if needed,
-            # but for monthly graphs, we need the actual header for column names.
-            # Let's assume for SMD-OEE, the first row is the header, so no skiprows for this sheet.
             if self.selected_sheet == "SMD-OEE":
                 self.df = pd.read_excel(self.excel_path, sheet_name=self.selected_sheet)
-                # Ensure column names are strings to avoid issues with mixed types
                 self.df.columns = self.df.columns.astype(str)
             else:
                 self.df = pd.read_excel(self.excel_path, sheet_name=self.selected_sheet, header=None, skiprows=[0])
-                # Ensure column names are strings for consistency
                 self.df.columns = [str(col) for col in self.df.columns]
 
-            # Yüklenen verinin kaynağını sakla
             self.df.attrs['excel_path'] = self.excel_path
             self.df.attrs['selected_sheet'] = self.selected_sheet
 
             logging.info("'%s' sayfasından veri yüklendi. Satır sayısı: %d", self.selected_sheet, len(self.df))
 
-            # Sütun isimlerini belirle (A, B, BP, H-BD)
-            # A sütunu: Gruplama değişkeni (tarih)
             self.grouping_col_name = self.df.columns[excel_col_to_index('A')]
-            # B sütunu: Gruplanan değişken (ürün/hat)
             self.grouped_col_name = self.df.columns[excel_col_to_index('B')]
-            # BP sütunu: OEE değeri
             self.oee_col_name = self.df.columns[excel_col_to_index('BP')] if excel_col_to_index('BP') < len(
-                self.df.columns) else None  # Ensure BP column exists
+                self.df.columns) else None
 
-            # H'den BD'ye kadar olan sütunlar: Metrikler (duruş sebepleri)
             start_col_index = excel_col_to_index('H')
             end_col_index = excel_col_to_index('BD')
-            # AP sütununu metriklerden hariç tut
             ap_col_index = excel_col_to_index('AP')
 
             self.metric_cols = []
@@ -1661,12 +1614,12 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Veri Yükleme Hatası", f"Veri yüklenirken bir hata oluştu: {e}")
             logging.exception("Excel veri yükleme hatası.")
-            self.df = pd.DataFrame()  # Hata durumunda boş DataFrame ayarla
+            self.df = pd.DataFrame()
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")  # Daha modern bir stil kullan
+    app.setStyle("Fusion")
 
     try:
         win = MainWindow()

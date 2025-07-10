@@ -1,0 +1,3 @@
+2025-07-10 13:35:13,360 - INFO - Excel yükleyici baþlatýldý: C:/Users/cizgi/Desktop/Downloads/2025_Haziran SMD-ROBOT.xlsx
+2025-07-10 13:35:14,195 - INFO - 'SMD-OEE' sayfasý baþarýyla yüklendi.
+2025-07-10 13:35:15,867 - WARNING - Gruplama sütunu algýlanamadý. Varsayýlan olarak 'HAT' kullanýlacak (eðer varsa).
