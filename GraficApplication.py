@@ -367,17 +367,6 @@ class FileSelectionPage(QWidget):
         self.btn_browse.clicked.connect(self.browse)
         layout.addWidget(self.btn_browse)
 
-        self.sheet_selection_label = QLabel("İşlenecek Sayfa:")
-        self.sheet_selection_label.setAlignment(Qt.AlignCenter)
-        self.sheet_selection_label.hide()  # Başlangıçta gizli
-        layout.addWidget(self.sheet_selection_label)
-
-        self.cmb_sheet = QComboBox()
-        self.cmb_sheet.setEnabled(False)  # Başlangıçta devre dışı
-        self.cmb_sheet.currentIndexChanged.connect(self.on_sheet_selected)
-        self.cmb_sheet.hide()  # Başlangıçta gizli
-        layout.addWidget(self.cmb_sheet)
-
         layout.addStretch(1)  # Boşluk ekle
 
         # Yeni butonlar: Günlük Grafikler ve Aylık Grafikler
@@ -414,20 +403,18 @@ class FileSelectionPage(QWidget):
 
             self.main_window.excel_path = Path(path)
             self.lbl_path.setText(f"Seçilen Dosya: <b>{Path(path).name}</b>")
-            self.cmb_sheet.clear()
-            self.cmb_sheet.addItems(sheets)
-            self.cmb_sheet.setEnabled(True)
-            self.sheet_selection_label.show()
-            self.cmb_sheet.show()
+
+            # Bulunan sayfaları MainWindow'a kaydet
+            self.main_window.available_sheets = sheets
+            if "SMD-OEE" in sheets:
+                self.main_window.selected_sheet = "SMD-OEE"  # SMD-OEE varsa varsayılan olarak seç
+            elif sheets:
+                self.main_window.selected_sheet = sheets[0]  # Yoksa ilk uygun sayfayı varsayılan olarak seç
+            else:
+                self.main_window.selected_sheet = None
+
             self.btn_daily_graphs.setEnabled(True)  # Enable daily graphs button
             self.btn_monthly_graphs.setEnabled(True)  # Enable monthly graphs button
-
-            if len(sheets) == 1:  # Eğer sadece bir uygun sayfa varsa, otomatik seç
-                self.main_window.selected_sheet = sheets[0]
-                self.sheet_selection_label.setText(f"İşlenecek Sayfa: <b>{self.main_window.selected_sheet}</b>")
-                self.cmb_sheet.hide()  # ComboBox'ı gizle
-            else:
-                self.main_window.selected_sheet = self.cmb_sheet.currentText()  # Seçili sayfayı al
 
             logging.info("Dosya seçildi: %s", path)
 
@@ -436,36 +423,31 @@ class FileSelectionPage(QWidget):
                                  f"Dosya okunurken bir hata oluştu: {e}\nLütfen dosyanın bozuk olmadığından ve Excel formatında olduğundan emin olun.")
             self.reset_page()
 
-    def on_sheet_selected(self) -> None:
-        """Sayfa seçimi değiştiğinde ana penceredeki seçimi günceller."""
-        self.main_window.selected_sheet = self.cmb_sheet.currentText()
-        # Buttons are always enabled after file selection, no need to check here
-        # self.btn_daily_graphs.setEnabled(bool(self.main_window.selected_sheet))
-        # self.btn_monthly_graphs.setEnabled(bool(self.main_window.selected_sheet))
-
     def go_to_daily_graphs(self) -> None:
         """Günlük grafikler sayfasına geçer."""
-        self.main_window.load_excel()  # Excel verilerini yükle
+        # Veri seçimi sayfasına gitmeden önce load_excel'i burada çağırmıyoruz,
+        # DataSelectionPage'in refresh metodu çağıracak.
         self.main_window.goto_page(1)  # Veri seçimi sayfasına git (mevcut işlev)
 
     def go_to_monthly_graphs(self) -> None:
         """Aylık grafikler sayfasına geçer."""
-        # Ensure SMD-OEE sheet is selected for monthly graphs
-        if self.main_window.selected_sheet != "SMD-OEE":
-            QMessageBox.warning(self, "Uyarı", "Aylık grafikler için 'SMD-OEE' sayfası seçili olmalıdır.")
+        # Aylık grafikler için SMD-OEE sayfasının seçili olduğundan emin ol
+        if "SMD-OEE" not in self.main_window.available_sheets:
+            QMessageBox.warning(self, "Uyarı", "Aylık grafikler için 'SMD-OEE' sayfası Excel dosyasında bulunmalıdır.")
             return
-        self.main_window.load_excel()  # Excel verilerini yükle (SMD-OEE için özel yükleme)
+
+        # Seçili sayfayı SMD-OEE olarak ayarla ve veriyi yükle
+        self.main_window.selected_sheet = "SMD-OEE"
+        self.main_window.load_excel()  # SMD-OEE verisini yükle
+
         self.main_window.goto_page(3)  # Aylık grafikler sayfasına git (yeni sayfa)
 
     def reset_page(self):
         """Sayfayı başlangıç durumuna döndürür."""
         self.main_window.excel_path = None
         self.main_window.selected_sheet = None
+        self.main_window.available_sheets = []  # Reset available sheets
         self.lbl_path.setText("Henüz dosya seçilmedi")
-        self.cmb_sheet.clear()
-        self.cmb_sheet.setEnabled(False)
-        self.cmb_sheet.hide()
-        self.sheet_selection_label.hide()
         self.btn_daily_graphs.setEnabled(False)
         self.btn_monthly_graphs.setEnabled(False)
 
@@ -486,6 +468,18 @@ class DataSelectionPage(QWidget):
         title_label.setObjectName("title_label")
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
+
+        # Yeni eklenen sayfa seçimi alanı
+        sheet_selection_group = QHBoxLayout()
+        self.sheet_selection_label = QLabel("İşlenecek Sayfa:")
+        self.sheet_selection_label.setAlignment(Qt.AlignLeft)
+        sheet_selection_group.addWidget(self.sheet_selection_label)
+
+        self.cmb_sheet = QComboBox()
+        self.cmb_sheet.setEnabled(False)  # Başlangıçta devre dışı
+        self.cmb_sheet.currentIndexChanged.connect(self.on_sheet_selected)
+        sheet_selection_group.addWidget(self.cmb_sheet)
+        main_layout.addLayout(sheet_selection_group)
 
         # Gruplama değişkeni seçimi
         grouping_group = QHBoxLayout()
@@ -530,6 +524,34 @@ class DataSelectionPage(QWidget):
 
     def refresh(self) -> None:
         """Sayfa her gösterildiğinde verileri yeniler."""
+        # Sayfa seçimi ComboBox'ını doldur
+        self.cmb_sheet.clear()
+        if self.main_window.available_sheets:
+            self.cmb_sheet.addItems(self.main_window.available_sheets)
+            self.cmb_sheet.setEnabled(True)
+            # Eğer daha önce bir sayfa seçilmişse onu ayarla
+            if self.main_window.selected_sheet in self.main_window.available_sheets:
+                self.cmb_sheet.setCurrentText(self.main_window.selected_sheet)
+            else:
+                # İlk uygun sayfayı varsayılan olarak seç ve sinyali tetikle
+                self.cmb_sheet.setCurrentText(self.main_window.available_sheets[0])
+            # setCurrentText zaten currentIndexChanged sinyalini tetikleyecek,
+            # bu da on_sheet_selected'ı çağırıp load_excel'i çalıştıracak.
+        else:
+            self.cmb_sheet.setEnabled(False)
+            self.main_window.selected_sheet = None
+            QMessageBox.warning(self, "Uyarı", "Seçilen Excel dosyasında uygun sayfa bulunamadı.")
+            self.main_window.goto_page(0)  # Dosya seçimine geri dön
+            return
+
+    def on_sheet_selected(self) -> None:
+        """Sayfa seçimi değiştiğinde ana penceredeki seçimi günceller ve veriyi yeniden yükler."""
+        self.main_window.selected_sheet = self.cmb_sheet.currentText()
+        self.main_window.load_excel()  # Yeni seçilen sayfaya göre veriyi yeniden yükle
+        self._populate_data_selection_fields()  # Sayfanın diğer alanlarını yeniden doldur
+
+    def _populate_data_selection_fields(self):
+        """Gruplama, gruplanan ve metrik alanlarını doldurur."""
         df = self.main_window.df
         if df.empty:
             QMessageBox.critical(self, "Hata", "Veri yüklenemedi. Lütfen dosyayı kontrol edin.")
@@ -1420,6 +1442,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.excel_path: Path | None = None
         self.selected_sheet: str | None = None
+        self.available_sheets: List[str] = []  # Yeni eklendi: uygun sayfaların listesi
         self.df: pd.DataFrame = pd.DataFrame()
         self.grouping_col_name: str | None = None  # For daily graphs and monthly OEE
         self.grouped_col_name: str | None = None  # For daily graphs and monthly OEE (e.g., 'Ürün' column)
@@ -1582,7 +1605,13 @@ class MainWindow(QMainWindow):
     def load_excel(self) -> None:
         """Seçilen Excel dosyasını ve sayfasını yükler."""
         if not self.excel_path or not self.selected_sheet:
-            QMessageBox.warning(self, "Dosya Seçilmedi", "Lütfen önce bir Excel dosyası ve sayfa seçin.")
+            logging.warning("load_excel: Excel yolu veya seçili sayfa boş. Veri yüklenemiyor.")
+            return
+
+        # Eğer veri zaten yüklenmişse ve aynı dosya/sayfa ise tekrar yükleme
+        if not self.df.empty and self.df.attrs.get('excel_path') == self.excel_path and \
+                self.df.attrs.get('selected_sheet') == self.selected_sheet:
+            logging.info(f"Veri '{self.selected_sheet}' sayfasından zaten yüklü. Tekrar yüklenmiyor.")
             return
 
         try:
@@ -1597,6 +1626,10 @@ class MainWindow(QMainWindow):
                 self.df = pd.read_excel(self.excel_path, sheet_name=self.selected_sheet, header=None, skiprows=[0])
                 # Ensure column names are strings for consistency
                 self.df.columns = [str(col) for col in self.df.columns]
+
+            # Yüklenen verinin kaynağını sakla
+            self.df.attrs['excel_path'] = self.excel_path
+            self.df.attrs['selected_sheet'] = self.selected_sheet
 
             logging.info("'%s' sayfasından veri yüklendi. Satır sayısı: %d", self.selected_sheet, len(self.df))
 
