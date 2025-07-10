@@ -1106,9 +1106,21 @@ class MonthlyGraphWorker(QThread):
                 ax.set_xlabel("Tarih", fontsize=12, fontweight='bold')
                 ax.set_ylabel("OEE (%)", fontsize=12, fontweight='bold')
 
-                first_date_in_data = dates.min()
-                month_name = first_date_in_data.strftime(
-                    '%B').capitalize() if not dates.empty else datetime.date.today().strftime('%B').capitalize()
+                # Ay adını Türkçe ve büyük harfle al
+                # Python'ın varsayılan locale'i İngilizce olabileceğinden,
+                # ay adını manuel olarak çevirmek daha güvenli olabilir
+                month_names_turkish = {
+                    1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                    7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+                }
+                month_name = ""
+                if not dates.empty:
+                    first_date_in_data = dates.min()  # first_date_in_data tanımlandı
+                    month_name = month_names_turkish.get(first_date_in_data.month,
+                                                         first_date_in_data.strftime('%B')).capitalize()
+                else:
+                    month_name = datetime.date.today().strftime('%B').capitalize()
+
                 chart_title = f"{selected_hat} {month_name} OEE"
                 ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
 
