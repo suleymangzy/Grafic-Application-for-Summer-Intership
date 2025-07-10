@@ -395,7 +395,7 @@ class FileSelectionPage(QWidget):
         self.main_window.goto_page(1)
 
     def go_to_monthly_graphs(self) -> None:
-        """Aylık grafikler sayfasına geçer."""
+        """Aylık grafiklar sayfasına geçer."""
         if "SMD-OEE" not in self.main_window.available_sheets:
             QMessageBox.warning(self, "Uyarı", "Aylık grafikler için 'SMD-OEE' sayfası Excel dosyasında bulunmalıdır.")
             return
@@ -1300,12 +1300,17 @@ class MonthlyGraphsPage(QWidget):
 
         # Dinamik figür genişliği hesapla (her tarih için yaklaşık 0.6 inç)
         # Minimum genişlik 10.2 inç (1020 piksel / 100 dpi)
-        fig_width_inches = 1020 / 100  # 1020 piksel genişlik
-        fig_height_inches = 700 / 100  # 700 piksel yükseklik
+        # Eğer çok fazla tarih varsa, dinamik olarak artırın.
+        min_width_inches = 10.2  # 1020 piksel
+        calculated_width_based_on_dates = len(dates) * 0.6 if len(dates) > 0 else 0
+        fig_width_inches = max(min_width_inches, calculated_width_based_on_dates)
+
+        fig_height_inches = 8.0  # 800 piksel
 
         fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), dpi=100)
-        ax.set_facecolor('white')  # Arka planı beyaz yap
-        fig.patch.set_facecolor('white')  # Şekil arka planını beyaz yap
+        background_color = 'white'
+        fig.patch.set_facecolor(background_color)
+        ax.set_facecolor(background_color)
 
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
@@ -1348,8 +1353,8 @@ class MonthlyGraphsPage(QWidget):
 
         ax.yaxis.set_major_formatter(PercentFormatter())
 
-        # Y ekseni limitlerini 0% ile 100% aralığına sabitle, alt limit için küçük bir boşluk bırak
-        ax.set_ylim(bottom=-0.02, top=1.0)
+        # Y ekseni limitlerini 0% ile 100% aralığına sabitle, alt ve üst limitler için küçük bir boşluk bırak
+        ax.set_ylim(bottom=-0.02, top=1.02)
         # Y ekseni ana işaretçilerini %10'luk artışlarla ayarla
         ax.set_yticks(np.arange(0.0, 1.01, 0.1))
 
@@ -1374,7 +1379,7 @@ class MonthlyGraphsPage(QWidget):
 
         # Legend'ı sağa, dikeyde ortaya yerleştir ve grafiğe alan aç
         ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
-        fig.subplots_adjust(right=0.75)  # Grafiğin sağ kenarını küçült
+        fig.subplots_adjust(right=0.65)  # Grafiğin sağ kenarını daha da küçült
 
         canvas = FigureCanvas(fig)
         # Canvas boyutunu da grafiğin boyutuna göre ayarla
