@@ -1300,8 +1300,8 @@ class MonthlyGraphsPage(QWidget):
 
         # Dinamik figür genişliği hesapla (her tarih için yaklaşık 0.6 inç)
         # Minimum genişlik 10.2 inç (1020 piksel / 100 dpi)
-        fig_width_inches = max(10.2, len(dates) * 0.6)
-        fig_height_inches = 7.0  # Yüksekliği sabit tut (700 piksel / 100 dpi)
+        fig_width_inches = 1020 / 100  # 1020 piksel genişlik
+        fig_height_inches = 700 / 100  # 700 piksel yükseklik
 
         fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), dpi=100)
         ax.set_facecolor('white')  # Arka planı beyaz yap
@@ -1324,9 +1324,8 @@ class MonthlyGraphsPage(QWidget):
             if pd.notna(y) and y > 0:
                 ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, 10), ha='center',
                             fontsize=8, fontweight='bold')
-            elif pd.notna(y) and y == 0:  # 0 değerleri için de etiket göster
-                ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, -15), ha='center',
-                            fontsize=8, fontweight='bold', color='gray')
+            # elif pd.notna(y) and y == 0: # 0 değerleri için de etiket göster (kaldırıldı)
+            #      ax.annotate(f'{y*100:.1f}%', (x, y), textcoords="offset points", xytext=(0,-15), ha='center', fontsize=8, fontweight='bold', color='gray')
 
         overall_calculated_average = np.mean(oee_values) if not oee_values.empty else 0
 
