@@ -621,7 +621,7 @@ class DataSelectionPage(QWidget):
 
 
 class DailyGraphsPage(QWidget):
-    """Oluşturulan günlük grafikleri gösteren ve kaydetme seçenekleri sunan sayfa."""
+    """Oluşturulan günlük grafikleri gösteren ve kaydettirme seçenekleri sunan sayfa."""
 
     def __init__(self, main_window: "MainWindow") -> None:
         super().__init__()
@@ -1319,11 +1319,13 @@ class MonthlyGraphsPage(QWidget):
 
         line_color = '#1f77b4'
 
-        ax.plot(dates, oee_values, marker='o', markersize=8, color=line_color, linewidth=2, label=hat_name)
-        ax.plot(dates, oee_values, 'o', markersize=6, color='white', markeredgecolor=line_color, markeredgewidth=1.5,
-                zorder=5)
+        # X ekseninde eşit aralıklarla konumlandırmak için sayısal bir indeks kullan
+        x_indices = np.arange(len(dates))
+        ax.plot(x_indices, oee_values, marker='o', markersize=8, color=line_color, linewidth=2, label=hat_name)
+        ax.plot(x_indices, oee_values, 'o', markersize=6, color='white', markeredgecolor=line_color,
+                markeredgewidth=1.5, zorder=5)
 
-        for x, y in zip(dates, oee_values):
+        for i, (x, y) in enumerate(zip(x_indices, oee_values)):
             # %0 olan değerlerin üzerinde "%0" belirteci olmasın
             if pd.notna(y) and y > 0:
                 ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, 10), ha='center',
@@ -1358,8 +1360,11 @@ class MonthlyGraphsPage(QWidget):
             ax.text(1.01, y_val, f'{overall_calculated_average * 100:.1f}%',
                     transform=ax.transAxes, color='purple', va='center', ha='left', fontsize=9, fontweight='bold')
 
-        ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%d.%m.%Y'))
-        ax.set_xticks(dates)  # Tüm tarihleri x ekseni işaretçisi olarak ayarla
+        # X ekseni işaretçilerini sayısal indekslere ayarla
+        ax.set_xticks(x_indices)
+        # X ekseni etiketlerini orijinal tarihlerle ayarla
+        ax.set_xticklabels([d.strftime('%d.%m.%Y') for d in dates])
+
         fig.autofmt_xdate(rotation=45)  # Tarih etiketlerini döndür
 
         # Y ekseni etiketlerini yüzde olarak formatla
