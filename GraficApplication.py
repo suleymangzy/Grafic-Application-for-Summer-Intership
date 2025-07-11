@@ -1368,12 +1368,13 @@ class MonthlyGraphsPage(QWidget):
         fig.autofmt_xdate(rotation=45)  # Tarih etiketlerini döndür
 
         # Y ekseni etiketlerini yüzde olarak formatla
-        ax.yaxis.set_major_formatter(PercentFormatter())
+        # Y ekseni etiketlerini tam sayı yüzde olarak formatla
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
+        # Y ekseni ana işaretçilerini %25'luk artışlarla ayarla
+        ax.set_yticks(np.arange(0.0, 1.001, 0.25))
         # Y ekseni limitlerini 0% ile 100% aralığına sabitle, alt ve üst limitler için küçük bir boşluk bırak
-        ax.set_ylim(bottom=-0.02, top=1.02)
-        # Y ekseni ana işaretçilerini %10'luk artışlarla ayarla
-        ax.set_yticks(np.arange(0.0, 1.01, 0.1))
+        ax.set_ylim(bottom=-0.05, top=1.05)
 
         ax.set_xlabel("Tarih", fontsize=12, fontweight='bold')
         ax.set_ylabel("OEE (%)", fontsize=12, fontweight='bold')
