@@ -899,7 +899,7 @@ class MonthlyGraphWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, df: pd.DataFrame, grouping_col_name: str, grouped_col_name: str, oee_col_name: str,
-                 prev_year_oee: float | None, prev_month_oee: float | None):
+                 prev_year_oee: float | None, prev_month_oee: float | None, graph_type: str):
         super().__init__()
         self.df = df.copy()
         self.grouping_col_name = grouping_col_name
@@ -907,6 +907,7 @@ class MonthlyGraphWorker(QThread):
         self.oee_col_name = oee_col_name
         self.prev_year_oee = prev_year_oee
         self.prev_month_oee = prev_month_oee
+        self.graph_type = graph_type  # Yeni eklenen parametre
 
     def run(self):
         """İş parçacığı başladığında çalışacak metod."""
@@ -943,32 +944,46 @@ class MonthlyGraphWorker(QThread):
                 self.error.emit("'Tarih' sütunu bulunamadı.")
                 return
 
-            # 'OEE_Degeri' sütununu float'a dönüştür
-            if 'OEE_Degeri' in df_smd_oee.columns:
-                logging.info(
-                    f"MonthlyGraphWorker: 'OEE_Degeri' sütunu dönüştürme öncesi ilk 5 değer ve tipleri:\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
+            # 'OEE_Degeri' sütununu float'a dönüştür (sadece OEE grafikleri için)
+            if self.graph_type == "OEE Grafikleri":
+                if 'OEE_Degeri' in df_smd_oee.columns:
+                    logging.info(
+                        f"MonthlyGraphWorker: 'OEE_Degeri' sütunu dönüştürme öncesi ilk 5 değer ve tipleri:\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
 
-                # FutureWarning'ı önlemek için inplace=True kaldırıldı
-                df_smd_oee['OEE_Degeri'] = pd.to_numeric(
-                    df_smd_oee['OEE_Degeri'].astype(str).str.replace('%', '').str.replace(',', '.'),
-                    errors='coerce'
-                )
-                # NaN değerleri 0.0 ile doldur
-                df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'].fillna(0.0)
+                    # FutureWarning'ı önlemek için inplace=True kaldırıldı
+                    df_smd_oee['OEE_Degeri'] = pd.to_numeric(
+                        df_smd_oee['OEE_Degeri'].astype(str).str.replace('%', '').str.replace(',', '.'),
+                        errors='coerce'
+                    )
+                    # NaN değerleri 0.0 ile doldur
+                    df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'].fillna(0.0)
 
-                # Eğer OEE değerleri 1'den büyükse (yani % cinsinden ise), 100'e bölerek 0-1 aralığına getir
-                # Örneğin, 85.5 değeri 0.855'e dönüşür.
-                if not df_smd_oee['OEE_Degeri'].empty and df_smd_oee['OEE_Degeri'].max() > 1.0:
-                    df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'] / 100.0
-                    logging.info("MonthlyGraphWorker: OEE_Degeri sütunu 0-1 aralığına ölçeklendi (100'e bölündü).")
+                    # Eğer OEE değerleri 1'den büyükse (yani % cinsinden ise), 100'e bölerek 0-1 aralığına getir
+                    # Örneğin, 85.5 değeri 0.855'e dönüşür.
+                    if not df_smd_oee['OEE_Degeri'].empty and df_smd_oee['OEE_Degeri'].max() > 1.0:
+                        df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'] / 100.0
+                        logging.info("MonthlyGraphWorker: OEE_Degeri sütunu 0-1 aralığına ölçeklendi (100'e bölündü).")
 
-                logging.info(
-                    f"MonthlyGraphWorker: 'OEE_Degeri' sütunu dönüştürme sonrası ve NaN doldurma sonrası ilk 5 değer ve tipleri:\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
-                logging.info(
-                    f"MonthlyGraphWorker: OEE_Degeri sütunu float'a dönüştürüldü ve geçersiz/boş değerler 0.0 ile dolduruldu. Yeni boyut: {df_smd_oee.shape}")
-            else:
-                self.error.emit("'OEE_Degeri' sütunu bulunamadı.")
-                return
+                    logging.info(
+                        f"MonthlyGraphWorker: 'OEE_Degeri' sütunu dönüştürme sonrası ve NaN doldurma sonrası ilk 5 değer ve tipleri:\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
+                    logging.info(
+                        f"MonthlyGraphWorker: OEE_Degeri sütunu float'a dönüştürüldü ve geçersiz/boş değerler 0.0 ile dolduruldu. Yeni boyut: {df_smd_oee.shape}")
+                else:
+                    self.error.emit("'OEE_Degeri' sütunu bulunamadı.")
+                    return
+
+            # Dizgi Onay Dağılım Grafiği için 19. indeks (T sütunu)
+            dizgi_onay_col_index = excel_col_to_index('T')  # T sütunu (19. indeks)
+            dizgi_onay_col_name = self.df.columns[dizgi_onay_col_index] if dizgi_onay_col_index < len(
+                self.df.columns) else None
+
+            if self.graph_type == "Dizgi Onay Dağılım Grafiği":
+                if not dizgi_onay_col_name or dizgi_onay_col_name not in df_smd_oee.columns:
+                    self.error.emit(f"'{dizgi_onay_col_name}' (Dizgi Onay) sütunu bulunamadı veya geçersiz.")
+                    return
+                # Dizgi Onay sütununu saniyeye dönüştür
+                df_smd_oee[dizgi_onay_col_name] = seconds_from_timedelta(df_smd_oee[dizgi_onay_col_name])
+                logging.info(f"MonthlyGraphWorker: '{dizgi_onay_col_name}' sütunu saniyeye dönüştürüldü.")
 
             # 'Group_Key' (örn: "HAT-4") çıkar
             def extract_group_key(s):
@@ -1013,25 +1028,36 @@ class MonthlyGraphWorker(QThread):
                     self.progress.emit(int((i + 1) / total_hats * 100))
                     continue
 
-                # Tarihe göre grupla ve OEE ortalamasını hesapla
-                # Artık eksik tarihleri doldurmuyoruz, sadece mevcut tarihlerin ortalamasını alıyoruz.
-                grouped_oee = df_smd_oee_filtered_by_hat.groupby(pd.Grouper(key='Tarih', freq='D'))[
-                    'OEE_Degeri'].mean().reset_index()
+                if self.graph_type == "OEE Grafikleri":
+                    # Tarihe göre grupla ve OEE ortalamasını hesapla
+                    grouped_oee = df_smd_oee_filtered_by_hat.groupby(pd.Grouper(key='Tarih', freq='D'))[
+                        'OEE_Degeri'].mean().reset_index()
+                    grouped_oee.dropna(subset=['OEE_Degeri'], inplace=True)
+                    figures_data.append((selected_hat, grouped_oee.to_dict('records')))
+                    logging.info(f"MonthlyGraphWorker: '{selected_hat}' için OEE verisi hazırlandı.")
 
-                # OEE değeri NaN olan satırları kaldır (yani o gün için hiç OEE verisi yoksa)
-                grouped_oee.dropna(subset=['OEE_Degeri'], inplace=True)
+                elif self.graph_type == "Dizgi Onay Dağılım Grafiği":
+                    # Dizgi Onay metriği için toplam değerleri al
+                    current_hat_onay_sum = df_smd_oee_filtered_by_hat[dizgi_onay_col_name].sum()
 
-                logging.info(
-                    f"MonthlyGraphWorker: '{selected_hat}' için günlük OEE ortalamaları (gruplama sonrası - eksik tarihler hariç):\n{grouped_oee.to_string()}")
+                    # Diğer hatların Dizgi Onay toplamını hesapla
+                    other_hats_df = df_smd_oee[df_smd_oee['Group_Key'] != selected_hat].copy()
+                    other_hats_onay_sum = other_hats_df[dizgi_onay_col_name].sum()
 
-                if grouped_oee.empty:
-                    logging.warning(
-                        f"MonthlyGraphWorker: Seçilen '{selected_hat}' hattı için günlük OEE ortalaması bulunamadı, atlanıyor.")
-                    self.progress.emit(int((i + 1) / total_hats * 100))
-                    continue
+                    total_onay_sum = current_hat_onay_sum + other_hats_onay_sum
 
-                # Figür oluşturma adımını kaldır, sadece veriyi sakla
-                figures_data.append((selected_hat, grouped_oee.to_dict('records')))
+                    logging.info(
+                        f"Dizgi Onay Dağılımı - Hat: {selected_hat}, Bu Hat Toplam: {current_hat_onay_sum:.2f} saniye, Diğer Hatlar Toplam: {other_hats_onay_sum:.2f} saniye")
+
+                    if total_onay_sum > 0:
+                        figures_data.append((selected_hat, [
+                            {"label": selected_hat, "value": current_hat_onay_sum},
+                            {"label": "DİĞER HATLAR", "value": other_hats_onay_sum}
+                        ]))
+                        logging.info(f"MonthlyGraphWorker: '{selected_hat}' için Dizgi Onay verisi hazırlandı.")
+                    else:
+                        logging.warning(
+                            f"MonthlyGraphWorker: '{selected_hat}' için Dizgi Onay verisi bulunamadı veya toplamı sıfır, atlanıyor.")
 
                 self.progress.emit(int((i + 1) / total_hats * 100))
                 logging.info(
@@ -1176,21 +1202,26 @@ class MonthlyGraphsPage(QWidget):
     def on_monthly_graph_type_changed(self, index: int):
         """Aylık grafik tipi seçimi değiştiğinde ilgili seçenekleri gösterir/gizler."""
         selected_type = self.cmb_monthly_graph_type.currentText()
-        if selected_type == "OEE Grafikleri":
-            self.oee_options_widget.show()
-            self.other_graphs_widget.hide()
-            self.btn_line_chart.setEnabled(True)  # OEE Grafikleri seçildiğinde Hat Grafikleri aktif
-        else:
-            self.oee_options_widget.hide()
-            self.other_graphs_widget.show()
-            self.btn_line_chart.setEnabled(False)  # Diğer tiplerde devre dışı
-
         self.clear_monthly_chart_canvas()
         self.btn_save_monthly_chart.setEnabled(False)
         self.figures_data_monthly.clear()
         self.current_page_monthly = 0
         self.update_monthly_page_label()
         self.update_monthly_navigation_buttons()
+
+        if selected_type == "OEE Grafikleri":
+            self.oee_options_widget.show()
+            self.other_graphs_widget.hide()
+            self.btn_line_chart.setEnabled(True)
+        elif selected_type == "Dizgi Onay Dağılım Grafiği":
+            self.oee_options_widget.hide()
+            self.other_graphs_widget.show()
+            self.btn_line_chart.setEnabled(False)  # Disable the button as it will be triggered automatically
+            self._start_monthly_graph_worker()  # Automatically start worker for Dizgi Onay
+        else:
+            self.oee_options_widget.hide()
+            self.other_graphs_widget.show()
+            self.btn_line_chart.setEnabled(False)
 
     def clear_monthly_chart_canvas(self):
         """Aylık grafik tuvallerini temizler."""
@@ -1235,7 +1266,8 @@ class MonthlyGraphsPage(QWidget):
             grouped_col_name=self.main_window.grouped_col_name,
             oee_col_name=self.main_window.oee_col_name,
             prev_year_oee=prev_year_oee,
-            prev_month_oee=prev_month_oee
+            prev_month_oee=prev_month_oee,
+            graph_type=self.cmb_monthly_graph_type.currentText()  # Yeni parametre
         )
         self.monthly_worker.finished.connect(self._on_monthly_graphs_generated)
         self.monthly_worker.progress.connect(self.monthly_progress.setValue)
@@ -1287,24 +1319,11 @@ class MonthlyGraphsPage(QWidget):
             self.update_monthly_navigation_buttons()
             return
 
-        hat_name, oee_data_list = self.figures_data_monthly[self.current_page_monthly]
+        hat_name, data_list = self.figures_data_monthly[self.current_page_monthly]
 
-        # Saklanan veriden DataFrame'i yeniden oluştur
-        grouped_oee = pd.DataFrame(oee_data_list)
-        # 'Tarih' sütununun datetime olduğundan emin ol
-        grouped_oee['Tarih'] = pd.to_datetime(grouped_oee['Tarih'])
-
-        dates = grouped_oee['Tarih']
-        oee_values = grouped_oee['OEE_Degeri']
-
-        # Dinamik figür genişliği hesapla (her tarih için yaklaşık 0.6 inç)
-        # Minimum genişlik 10.2 inç (1020 piksel / 100 dpi)
-        # Eğer çok fazla tarih varsa, dinamik olarak artırın.
-        min_width_inches = 10.2  # 1020 piksel
-        calculated_width_based_on_dates = len(dates) * 0.6 if len(dates) > 0 else 0
-        fig_width_inches = max(min_width_inches, calculated_width_based_on_dates)
-
-        fig_height_inches = 8.0  # 800 piksel
+        # Güncellenen boyutlar
+        fig_width_inches = 8.0  # 800 piksel
+        fig_height_inches = 5.0  # 500 piksel
 
         fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), dpi=100)
         background_color = 'white'
@@ -1317,88 +1336,144 @@ class MonthlyGraphsPage(QWidget):
         ax.spines['bottom'].set_visible(False)
         ax.grid(False)
 
-        line_color = '#1f77b4'
+        if self.cmb_monthly_graph_type.currentText() == "OEE Grafikleri":
+            # Saklanan veriden DataFrame'i yeniden oluştur
+            grouped_oee = pd.DataFrame(data_list)
+            # 'Tarih' sütununun datetime olduğundan emin ol
+            grouped_oee['Tarih'] = pd.to_datetime(grouped_oee['Tarih'])
 
-        # X ekseninde eşit aralıklarla konumlandırmak için sayısal bir indeks kullan
-        x_indices = np.arange(len(dates))
-        ax.plot(x_indices, oee_values, marker='o', markersize=8, color=line_color, linewidth=2, label=hat_name)
-        ax.plot(x_indices, oee_values, 'o', markersize=6, color='white', markeredgecolor=line_color,
-                markeredgewidth=1.5, zorder=5)
+            dates = grouped_oee['Tarih']
+            oee_values = grouped_oee['OEE_Degeri']
 
-        for i, (x, y) in enumerate(zip(x_indices, oee_values)):
-            # %0 olan değerlerin üzerinde "%0" belirteci olmasın
-            if pd.notna(y) and y > 0:
-                ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, 10), ha='center',
-                            fontsize=8, fontweight='bold')
+            line_color = '#1f77b4'
 
-        overall_calculated_average = np.mean(oee_values) if not oee_values.empty else 0
+            # X ekseninde eşit aralıklarla konumlandırmak için sayısal bir indeks kullan
+            x_indices = np.arange(len(dates))
+            ax.plot(x_indices, oee_values, marker='o', markersize=8, color=line_color, linewidth=2, label=hat_name)
+            ax.plot(x_indices, oee_values, 'o', markersize=6, color='white', markeredgecolor=line_color,
+                    markeredgewidth=1.5, zorder=5)
 
-        # Horizontal line for previous year OEE
-        if self.prev_year_oee_for_plot is not None:
-            y_val = self.prev_year_oee_for_plot / 100
-            ax.axhline(y_val, color='red', linestyle='--', linewidth=1.5,
-                       label=f'Önceki Yıl OEE ({self.prev_year_oee_for_plot:.1f}%)')
-            # Yüzde değerini sağa, eksenin dışına yaz
-            ax.text(1.01, y_val, f'{self.prev_year_oee_for_plot:.1f}%',
-                    transform=ax.transAxes, color='red', va='center', ha='left', fontsize=9, fontweight='bold')
+            for i, (x, y) in enumerate(zip(x_indices, oee_values)):
+                # %0 olan değerlerin üzerinde "%0" belirteci olmasın
+                if pd.notna(y) and y > 0:
+                    ax.annotate(f'{y * 100:.1f}%', (x, y), textcoords="offset points", xytext=(0, 10), ha='center',
+                                fontsize=8, fontweight='bold')
 
-        # Horizontal line for previous month OEE
-        if self.prev_month_oee_for_plot is not None:
-            y_val = self.prev_month_oee_for_plot / 100
-            ax.axhline(y_val, color='orange', linestyle='--', linewidth=1.5,
-                       label=f'Önceki Ay OEE ({self.prev_month_oee_for_plot:.1f}%)')
-            # Yüzde değerini sağa, eksenin dışına yaz
-            ax.text(1.01, y_val, f'{self.prev_month_oee_for_plot:.1f}%',
-                    transform=ax.transAxes, color='orange', va='center', ha='left', fontsize=9, fontweight='bold')
+            overall_calculated_average = np.mean(oee_values) if not oee_values.empty else 0
 
-        # Horizontal line for calculated average OEE
-        if overall_calculated_average > 0:
-            y_val = overall_calculated_average
-            ax.axhline(y_val, color='purple', linestyle='--', linewidth=1.5,
-                       label=f'Hesaplanan Ortalama OEE ({overall_calculated_average * 100:.1f}%)')
-            # Yüzde değerini sağa, eksenin dışına yaz
-            ax.text(1.01, y_val, f'{overall_calculated_average * 100:.1f}%',
-                    transform=ax.transAxes, color='purple', va='center', ha='left', fontsize=9, fontweight='bold')
+            # Horizontal line for previous year OEE
+            if self.prev_year_oee_for_plot is not None:
+                y_val = self.prev_year_oee_for_plot / 100
+                ax.axhline(y_val, color='red', linestyle='--', linewidth=1.5,
+                           label=f'Önceki Yıl OEE ({self.prev_year_oee_for_plot:.1f}%)')
+                # Yüzde değerini sağa, eksenin dışına yaz
+                ax.text(1.01, y_val, f'{self.prev_year_oee_for_plot:.1f}%',
+                        transform=ax.transAxes, color='red', va='center', ha='left', fontsize=9, fontweight='bold')
 
-        # X ekseni işaretçilerini sayısal indekslere ayarla
-        ax.set_xticks(x_indices)
-        # X ekseni etiketlerini orijinal tarihlerle ayarla
-        ax.set_xticklabels([d.strftime('%d.%m.%Y') for d in dates])
+            # Horizontal line for previous month OEE
+            if self.prev_month_oee_for_plot is not None:
+                y_val = self.prev_month_oee_for_plot / 100
+                ax.axhline(y_val, color='orange', linestyle='--', linewidth=1.5,
+                           label=f'Önceki Ay OEE ({self.prev_month_oee_for_plot:.1f}%)')
+                # Yüzde değerini sağa, eksenin dışına yaz
+                ax.text(1.01, y_val, f'{self.prev_month_oee_for_plot:.1f}%',
+                        transform=ax.transAxes, color='orange', va='center', ha='left', fontsize=9, fontweight='bold')
 
-        fig.autofmt_xdate(rotation=45)  # Tarih etiketlerini döndür
+            # Horizontal line for calculated average OEE
+            if overall_calculated_average > 0:
+                y_val = overall_calculated_average
+                ax.axhline(y_val, color='purple', linestyle='--', linewidth=1.5,
+                           label=f'Hesaplanan Ortalama OEE ({overall_calculated_average * 100:.1f}%)')
+                # Yüzde değerini sağa, eksenin dışına yaz
+                ax.text(1.01, y_val, f'{overall_calculated_average * 100:.1f}%',
+                        transform=ax.transAxes, color='purple', va='center', ha='left', fontsize=9, fontweight='bold')
 
-        # Y ekseni etiketlerini yüzde olarak formatla
-        # Y ekseni etiketlerini tam sayı yüzde olarak formatla
-        ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+            # X ekseni işaretçilerini sayısal indekslere ayarla
+            ax.set_xticks(x_indices)
+            # X ekseni etiketlerini orijinal tarihlerle ayarla
+            ax.set_xticklabels([d.strftime('%d.%m.%Y') for d in dates])
 
-        # Y ekseni ana işaretçilerini %25'luk artışlarla ayarla
-        ax.set_yticks(np.arange(0.0, 1.001, 0.25))
-        # Y ekseni limitlerini 0% ile 100% aralığına sabitle, alt ve üst limitler için küçük bir boşluk bırak
-        ax.set_ylim(bottom=-0.05, top=1.05)
+            fig.autofmt_xdate(rotation=45)  # Tarih etiketlerini döndür
 
-        ax.set_xlabel("Tarih", fontsize=12, fontweight='bold')
-        ax.set_ylabel("OEE (%)", fontsize=12, fontweight='bold')
+            # Y ekseni etiketlerini yüzde olarak formatla
+            # Y ekseni etiketlerini tam sayı yüzde olarak formatla
+            ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
-        # Ay adını Türkçe ve büyük harfle al
-        month_names_turkish = {
-            1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
-            7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
-        }
-        month_name = ""
-        if not dates.empty:
-            first_date_in_data = dates.min()
-            month_name = month_names_turkish.get(first_date_in_data.month,
-                                                 first_date_in_data.strftime('%B')).capitalize()
-        else:
-            month_name = datetime.date.today().strftime('%B').capitalize()
+            # Y ekseni ana işaretçilerini %25'luk artışlarla ayarla
+            ax.set_yticks(np.arange(0.0, 1.001, 0.25))
+            # Y ekseni limitlerini 0% ile 100% aralığına sabitle, alt ve üst limitler için küçük bir boşluk bırak
+            ax.set_ylim(bottom=-0.05, top=1.05)
 
-        chart_title = f"{hat_name} {month_name} OEE"
-        ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
+            ax.set_xlabel("Tarih", fontsize=12, fontweight='bold')
+            ax.set_ylabel("OEE (%)", fontsize=12, fontweight='bold')
 
-        # Legend'ı sağa, dikeyde ortaya yerleştir ve grafiğe alan aç
-        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
-        # Legend ve yeni eklenen yüzde etiketleri için yeterli boşluk bırak
-        fig.subplots_adjust(right=0.60)
+            # Ay adını Türkçe ve büyük harfle al
+            month_names_turkish = {
+                1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+            }
+            month_name = ""
+            if not dates.empty:
+                first_date_in_data = dates.min()
+                month_name = month_names_turkish.get(first_date_in_data.month,
+                                                     first_date_in_data.strftime('%B')).capitalize()
+            else:
+                month_name = datetime.date.today().strftime('%B').capitalize()
+
+            chart_title = f"{hat_name} {month_name} OEE"
+            ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
+
+            # Legend'ı sağa, dikeyde ortaya yerleştir ve grafiğe alan aç
+            ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+            # Legend ve yeni eklenen yüzde etiketleri için yeterli boşluk bırak
+            fig.subplots_adjust(right=0.60)
+
+        elif self.cmb_monthly_graph_type.currentText() == "Dizgi Onay Dağılım Grafiği":
+            labels = [d["label"] for d in data_list]
+            values = [d["value"] for d in data_list]
+
+            # Güncellenmiş renkler
+            colors = ['#4682B4', '#B0C4DE']  # SteelBlue ve LightSteelBlue
+
+            total_sum = sum(values)
+
+            # Autopct formatını özelleştir
+            def func(pct, allvals):
+                absolute = int(np.round(pct / 100. * total_sum))
+                # Saniyeyi HH:MM:SS formatına dönüştür
+                hours = absolute // 3600
+                minutes = (absolute % 3600) // 60
+                seconds = absolute % 60
+                return f"{hours:02d}:{minutes:02d}:{seconds:02d}; {pct:.0f}%"
+
+            wedges, texts, autotexts = ax.pie(
+                values,
+                autopct=lambda pct: func(pct, values),
+                startangle=90,
+                colors=colors,
+                # width parametresi kaldırıldı, böylece donut değil tam pasta grafiği olur
+                wedgeprops=dict(edgecolor='black', linewidth=1.5)
+            )
+
+            # Autotexts (yüzde etiketleri) için renk ve stil ayarı
+            for autotext in autotexts:
+                autotext.set_color('black')
+                autotext.set_fontsize(12)
+                autotext.set_fontweight('bold')
+
+            ax.axis('equal')  # Dairenin orantılı olmasını sağlar
+
+            # Legend'ı sağ üst köşeye taşı
+            ax.legend(wedges, labels,
+                      title="Hatlar",
+                      loc="upper right",
+                      bbox_to_anchor=(1.2, 1),
+                      fontsize=10,
+                      title_fontsize=12)
+
+            chart_title = f"Dizgi Onay Dağılımı - {hat_name}"
+            ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
+            fig.tight_layout()  # Grafiğin sıkışmasını önle
 
         canvas = FigureCanvas(fig)
         # Canvas boyutunu da grafiğin boyutuna göre ayarla
@@ -1694,3 +1769,4 @@ if __name__ == "__main__":
         msg.setWindowTitle("Kritik Hata")
         msg.exec_()
         sys.exit(1)
+        
