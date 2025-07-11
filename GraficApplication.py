@@ -1141,7 +1141,7 @@ class MonthlyGraphsPage(QWidget):
 
         self.other_graphs_widget = QWidget()
         other_graphs_layout = QVBoxLayout(self.other_graphs_widget)
-        other_graphs_layout.addWidget(QLabel("Bu grafik tipi için seçenekler burada olacak."))
+        # Placeholder metin kaldırıldı
         main_layout.addWidget(self.other_graphs_widget)
         self.other_graphs_widget.hide()
 
@@ -1432,8 +1432,8 @@ class MonthlyGraphsPage(QWidget):
             labels = [d["label"] for d in data_list]
             values = [d["value"] for d in data_list]
 
-            # Güncellenmiş renkler
-            colors = ['#4682B4', '#B0C4DE']  # SteelBlue ve LightSteelBlue
+            # Güncellenmiş renkler: Koyu Mavi ve Turuncu
+            colors = ['#00008B', '#FFA500']
 
             total_sum = sum(values)
 
@@ -1457,8 +1457,8 @@ class MonthlyGraphsPage(QWidget):
 
             # Autotexts (yüzde etiketleri) için renk ve stil ayarı
             for autotext in autotexts:
-                autotext.set_color('black')
-                autotext.set_fontsize(12)
+                autotext.set_color('white')  # Metin rengi beyaza çevrildi
+                autotext.set_fontsize(14)  # Font boyutu artırıldı
                 autotext.set_fontweight('bold')
 
             ax.axis('equal')  # Dairenin orantılı olmasını sağlar
@@ -1769,4 +1769,3 @@ if __name__ == "__main__":
         msg.setWindowTitle("Kritik Hata")
         msg.exec_()
         sys.exit(1)
-        
