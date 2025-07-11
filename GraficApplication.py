@@ -955,6 +955,13 @@ class MonthlyGraphWorker(QThread):
                 # NaN değerleri 0.0 ile doldur
                 df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'].fillna(0.0)
 
+                # Eğer OEE değerleri 1'den büyükse (yani % cinsinden ise), 100'e bölerek 0-1 aralığına getir
+                # Bu kontrol, sadece OEE değerlerinin 1'den büyük olduğu durumlarda yapılır.
+                # Örneğin, 0.85 gibi bir değer 100'e bölünmez.
+                if not df_smd_oee['OEE_Degeri'].empty and df_smd_oee['OEE_Degeri'].max() > 1.0:
+                    df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'] / 100.0
+                    logging.info("MonthlyGraphWorker: OEE_Degeri sütunu 0-1 aralığına ölçeklendi (100'e bölündü).")
+
                 logging.info(
                     f"MonthlyGraphWorker: 'OEE_Degeri' sütunu dönüştürme sonrası ve NaN doldurma sonrası ilk 5 değer ve tipleri:\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
                 logging.info(
@@ -1007,23 +1014,13 @@ class MonthlyGraphWorker(QThread):
                     continue
 
                 # Tarihe göre grupla ve OEE ortalamasını hesapla
+                # Eksik tarihleri dahil etme ve 0.0 ile doldurma adımı kaldırıldı.
+                # Yalnızca mevcut tarihlerin verileri kullanılacak.
                 grouped_oee = df_smd_oee_filtered_by_hat.groupby(pd.Grouper(key='Tarih', freq='D'))[
                     'OEE_Degeri'].mean().reset_index()
 
-                # Minimum ve maksimum tarihleri bul
-                min_date = df_smd_oee_filtered_by_hat['Tarih'].min()
-                max_date = df_smd_oee_filtered_by_hat['Tarih'].max()
-
-                # Tam tarih aralığını oluştur
-                full_date_range = pd.date_range(start=min_date, end=max_date, freq='D')
-
-                # grouped_oee DataFrame'ini tam tarih aralığına göre yeniden indeksle
-                # ve eksik tarihleri 0.0 ile doldur
-                grouped_oee = grouped_oee.set_index('Tarih').reindex(full_date_range).fillna(0.0).reset_index()
-                grouped_oee.rename(columns={'index': 'Tarih'}, inplace=True)  # Yeniden adlandırma
-
                 logging.info(
-                    f"MonthlyGraphWorker: '{selected_hat}' için günlük OEE ortalamaları (gruplama ve reindex sonrası):\n{grouped_oee.to_string()}")
+                    f"MonthlyGraphWorker: '{selected_hat}' için günlük OEE ortalamaları (gruplama sonrası - eksik tarihler hariç):\n{grouped_oee.to_string()}")
 
                 if grouped_oee.empty:
                     logging.warning(
@@ -1334,18 +1331,29 @@ class MonthlyGraphsPage(QWidget):
 
         overall_calculated_average = np.mean(oee_values) if not oee_values.empty else 0
 
+        # Horizontal line for previous year OEE
         if self.prev_year_oee_for_plot is not None:
-            # OEE değerini 0-1 aralığına ölçekle
-            ax.axhline(self.prev_year_oee_for_plot / 100, color='red', linestyle='--', linewidth=1.5,
+            y_val = self.prev_year_oee_for_plot / 100
+            ax.axhline(y_val, color='red', linestyle='--', linewidth=1.5,
                        label=f'Önceki Yıl OEE ({self.prev_year_oee_for_plot:.1f}%)')
+            ax.text(1.01, y_val, f'{self.prev_year_oee_for_plot:.1f}%',
+                    transform=ax.transAxes, color='red', va='center', ha='left', fontsize=9, fontweight='bold')
+
+        # Horizontal line for previous month OEE
         if self.prev_month_oee_for_plot is not None:
-            # OEE değerini 0-1 aralığına ölçekle
-            ax.axhline(self.prev_month_oee_for_plot / 100, color='orange', linestyle='--', linewidth=1.5,
+            y_val = self.prev_month_oee_for_plot / 100
+            ax.axhline(y_val, color='orange', linestyle='--', linewidth=1.5,
                        label=f'Önceki Ay OEE ({self.prev_month_oee_for_plot:.1f}%)')
+            ax.text(1.01, y_val, f'{self.prev_month_oee_for_plot:.1f}%',
+                    transform=ax.transAxes, color='orange', va='center', ha='left', fontsize=9, fontweight='bold')
+
+        # Horizontal line for calculated average OEE
         if overall_calculated_average > 0:
-            # overall_calculated_average zaten 0-1 aralığında
-            ax.axhline(overall_calculated_average, color='purple', linestyle='--', linewidth=1.5,
+            y_val = overall_calculated_average
+            ax.axhline(y_val, color='purple', linestyle='--', linewidth=1.5,
                        label=f'Hesaplanan Ortalama OEE ({overall_calculated_average * 100:.1f}%)')
+            ax.text(1.01, y_val, f'{overall_calculated_average * 100:.1f}%',
+                    transform=ax.transAxes, color='purple', va='center', ha='left', fontsize=9, fontweight='bold')
 
         ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%d.%m.%Y'))
         ax.set_xticks(dates)  # Tüm tarihleri x ekseni işaretçisi olarak ayarla
@@ -1379,7 +1387,7 @@ class MonthlyGraphsPage(QWidget):
 
         # Legend'ı sağa, dikeyde ortaya yerleştir ve grafiğe alan aç
         ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
-        fig.subplots_adjust(right=0.65)  # Grafiğin sağ kenarını daha da küçült
+        fig.subplots_adjust(right=0.60)  # Grafiğin sağ kenarını daha da küçült
 
         canvas = FigureCanvas(fig)
         # Canvas boyutunu da grafiğin boyutuna göre ayarla
