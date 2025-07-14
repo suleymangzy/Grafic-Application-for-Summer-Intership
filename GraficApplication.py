@@ -1566,8 +1566,17 @@ class MonthlyGraphsPage(QWidget):
             ax2.plot(metric_sums.index, cumulative_percentage, 'o', markersize=8, markerfacecolor='white',
                      markeredgecolor=line_color, markeredgewidth=2, zorder=2)
 
+            # Get the x-axis limits after plotting to determine the range for axhline
+            x_min_data, x_max_data = ax.get_xlim()
+
             # %80 noktasında yatay kesikli kırmızı çizgi ekle (görseldeki gibi gri ve ince)
-            ax2.axhline(80, color='#B0B0B0', linestyle='--', linewidth=1.5)
+            # Calculate normalized xmin and xmax based on the actual data range
+            # The cumulative line is plotted over the indices 0 to len(metric_sums.index) - 1
+            # Convert these data coordinates to normalized axis coordinates.
+            normalized_xmin = (0 - x_min_data) / (x_max_data - x_min_data)
+            normalized_xmax = (len(metric_sums.index) - 1 - x_min_data) / (x_max_data - x_min_data)
+
+            ax2.axhline(80, color='#B0B0B0', linestyle='--', linewidth=1.5, xmin=normalized_xmin, xmax=normalized_xmax)
 
             # Yatay ızgara çizgilerini kaldır
             ax.grid(False)
