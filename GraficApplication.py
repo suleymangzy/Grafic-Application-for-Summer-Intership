@@ -1577,6 +1577,8 @@ class MonthlyGraphsPage(QWidget):
             ax.set_xlabel("")
 
             # Metrik isimlerini kalın fontta yaz
+            # Set explicit ticks for x-axis to avoid UserWarning
+            ax.set_xticks(np.arange(len(metric_sums.index)))
             ax.set_xticklabels(metric_sums.index, fontsize=10, fontweight='bold', rotation=45, ha='right')
 
             # Sütunların üzerindeki % ve süre değerleri
