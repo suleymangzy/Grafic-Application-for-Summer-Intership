@@ -1471,7 +1471,7 @@ class MonthlyGraphsPage(QWidget):
                       fontsize=10,
                       title_fontsize=12)
 
-            chart_title = f"Dizgi Onay Dağılımı - {hat_name}"
+            chart_title = f"Dizgi Onay Dağılımı"
             ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
             fig.tight_layout()  # Grafiğin sıkışmasını önle
 
@@ -1548,9 +1548,8 @@ class MainWindow(QMainWindow):
         self.df: pd.DataFrame = pd.DataFrame()
         self.grouping_col_name: str | None = None
         self.grouped_col_name: str | None = None
-        self.metric_cols: List[str] = []
         self.oee_col_name: str | None = None
-        self.selected_grouping_val: str | None = None
+        self.metric_cols: List[str] = []
         self.grouped_values: List[str] = []
         self.selected_metrics: List[str] = []
 
