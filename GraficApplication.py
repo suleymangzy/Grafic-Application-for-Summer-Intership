@@ -1475,19 +1475,35 @@ class MonthlyGraphsPage(QWidget):
             # Yarı değer çizgisini ekle (sadece sayfa grafikleri için)
             if self.current_graph_mode == "page" and 'OEE_Degeri_Half' in grouped_oee.columns:
                 half_oee_values = grouped_oee['OEE_Degeri_Half']
+
+                month_names_turkish = {
+                    1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                    7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+                }
+                month_name_for_half_oee = ""
+                if not dates.empty:
+                    first_date_in_data = dates.min()
+                    month_name_for_half_oee = month_names_turkish.get(first_date_in_data.month,
+                                                                      first_date_in_data.strftime('%B')).capitalize()
+                else:
+                    month_name_for_half_oee = datetime.date.today().strftime('%B').capitalize()
+
+                average_half_oee = half_oee_values.mean() if not half_oee_values.empty else 0.0
+
+                half_oee_label = f"{month_name_for_half_oee} Ayı Çift Vardiya Durumunda OEE ({average_half_oee * 100:.1f}%)"
+
                 ax.plot(x_indices, half_oee_values, color='#ADD8E6', linestyle='--', linewidth=1.5,
-                        label='Çift Vardiya Durumunda Ay OEE (%)')
+                        label=half_oee_label)
                 ax.plot(x_indices, half_oee_values, 'o', markersize=6, markerfacecolor='#ADD8E6',
                         markeredgecolor='#ADD8E6', markeredgewidth=1.5, zorder=6)
 
-                # Yarı değer çizgisinin ortalama değerini legend'a ekle
-                if not half_oee_values.empty:
-                    average_half_oee = half_oee_values.mean()
-                    if pd.notna(average_half_oee):
-                        # Mevcut legend'a eklemek yerine, ayrı bir metin olarak sağa ekleyelim
-                        ax.text(1.01, average_half_oee, f'{average_half_oee * 100:.1f}% (Çift Vardiya Ort.)',
-                                transform=ax.transAxes, color='#ADD8E6', va='center', ha='left', fontsize=9,
-                                fontweight='bold')
+                # Yarı değer çizgisinin bitiş noktasına ortalama değeri yaz
+                if not half_oee_values.empty and len(x_indices) > 0:
+                    last_x_index = x_indices[-1]
+                    last_y_value = half_oee_values.iloc[-1]
+                    ax.annotate(f'{average_half_oee * 100:.1f}%', (last_x_index, last_y_value),
+                                textcoords="offset points", xytext=(5, -5), ha='left', va='center',
+                                fontsize=9, fontweight='bold', color='#ADD8E6')
 
             for i, (x, y) in enumerate(zip(x_indices, oee_values)):
                 if pd.notna(y) and y > 0:
