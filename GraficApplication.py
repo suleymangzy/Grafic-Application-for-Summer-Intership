@@ -1395,8 +1395,8 @@ class MonthlyGraphsPage(QWidget):
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         # Eksen çizgilerinin kalınlıklarını düşür
-        ax.spines['left'].set_linewidth(1.5) # Geri alındı
-        ax.spines['bottom'].set_linewidth(1.5) # Geri alındı
+        ax.spines['left'].set_linewidth(1.5)
+        ax.spines['bottom'].set_linewidth(1.5)
         ax.grid(False)
 
         if self.cmb_monthly_graph_type.currentText() == "OEE Grafikleri":
@@ -1602,6 +1602,10 @@ class MonthlyGraphsPage(QWidget):
             # Y ekseni limitlerini ayarla
             ax.set_ylim(bottom=0)
             ax2.set_ylim(0, 100)  # Yüzde ekseni 0-100 arasında
+
+            # Pareto grafiğinin üst çizgisini kaldır
+            ax.spines['top'].set_visible(False)
+            ax2.spines['top'].set_visible(False)
 
             # Legend
             lines, labels = ax.get_legend_handles_labels()
