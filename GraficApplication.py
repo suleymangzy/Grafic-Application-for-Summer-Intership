@@ -171,30 +171,34 @@ class GraphWorker(QThread):
                     [col for col in self.metric_cols if col in subset_df_for_chart.columns]].sum()
                 sums = sums[sums > 0]
 
-                oee_display_value = "0%"
+                oee_display_value = "0%"  # Varsayılan değer
                 if self.oee_col_name and self.oee_col_name in subset_df_for_chart.columns and not subset_df_for_chart.empty:
                     oee_value_raw = subset_df_for_chart[self.oee_col_name].values[0]
                     if pd.notna(oee_value_raw):
-                        try:
-                            oee_value_float: float
-                            if isinstance(oee_value_raw, str):
-                                oee_value_str = oee_value_raw.replace('%', '').strip()
-                                oee_value_float = float(oee_value_str)
-                            elif isinstance(oee_value_raw, (int, float)):
-                                oee_value_float = float(oee_value_raw)
-                            else:
-                                raise ValueError("Desteklenmeyen OEE değeri tipi veya formatı")
+                        if isinstance(oee_value_raw, str) and oee_value_raw.strip().upper() == "ÜRETİM YAPILMADI":
+                            # "Üretim Yapılmadı" ise OEE değerini gösterme
+                            oee_display_value = ""  # Boş string olarak ayarla
+                        else:
+                            try:
+                                oee_value_float: float
+                                if isinstance(oee_value_raw, str):
+                                    oee_value_str = oee_value_raw.replace('%', '').strip()
+                                    oee_value_float = float(oee_value_str)
+                                elif isinstance(oee_value_raw, (int, float)):
+                                    oee_value_float = float(oee_value_raw)
+                                else:
+                                    raise ValueError("Desteklenmeyen OEE değeri tipi veya formatı")
 
-                            if 0.0 <= oee_value_float <= 1.0 and oee_value_float != 0:
-                                oee_display_value = f"{oee_value_float * 100:.0f}%"
-                            elif oee_value_float > 1.0:
-                                oee_display_value = f"{oee_value_float:.0f}%"
-                            else:
+                                if 0.0 <= oee_value_float <= 1.0 and oee_value_float != 0:
+                                    oee_display_value = f"{oee_value_float * 100:.0f}%"
+                                elif oee_value_float > 1.0:
+                                    oee_display_value = f"{oee_value_float:.0f}%"
+                                else:
+                                    oee_display_value = "0%"
+                            except (ValueError, TypeError):
+                                logging.warning(
+                                    f"OEE değeri dönüştürülemedi: {oee_value_raw}. Varsayılan '0%' kullanılacak.")
                                 oee_display_value = "0%"
-                        except (ValueError, TypeError):
-                            logging.warning(
-                                f"OEE değeri dönüştürülemedi: {oee_value_raw}. Varsayılan '0%' kullanılacak.")
-                            oee_display_value = "0%"
 
                 if not sums.empty:
                     results.append((current_grouped_val, sums, oee_display_value))
@@ -226,7 +230,9 @@ class GraphPlotter:
             colors=chart_colors[:len(sorted_metrics_series)]
         )
 
-        ax.text(0, 0, f"OEE\n{oee_display_value}",
+        # "Üretim Yapılmadı" durumunda OEE metnini ayarla
+        oee_text_to_display = f"OEE\n{oee_display_value}" if oee_display_value else "OEE\nVeri Yok"
+        ax.text(0, 0, oee_text_to_display,
                 horizontalalignment='center', verticalalignment='center',
                 fontsize=24, fontweight='bold', color='black')
 
@@ -291,7 +297,9 @@ class GraphPlotter:
         ax.set_xlabel("")
         ax.set_xticks([])
 
-        ax.set_title(f"OEE: {oee_display_value}", fontsize=16, fontweight='bold')
+        # "Üretim Yapılmadı" durumunda başlığı ayarla
+        oee_title_text = f"OEE: {oee_display_value}" if oee_display_value else "OEE: Veri Yok"
+        ax.set_title(oee_title_text, fontsize=16, fontweight='bold')
 
         ax.grid(False)
 
@@ -1082,8 +1090,7 @@ class MonthlyGraphWorker(QThread):
                 sheets_to_process_info = [
                     ("DALGA_LEHİM", "BP"),
                     ("ROBOT", "BG"),
-                    # ("SMD-OEE", "BP"), # KAPLAMA-OEE yerine SMD-OEE kullanıldı, BP sütunu için - KULLANICI İSTEĞİ ÜZERİNE KALDIRILDI
-                    ("KAPLAMA-OEE", "BG")  # Eğer ayrı bir KAPLAMA-OEE sayfası varsa ve BG sütunu kullanıyorsa
+                    ("KAPLAMA-OEE", "BG")
                 ]
 
                 # Filter sheets based on availability in the loaded Excel file
@@ -1152,6 +1159,9 @@ class MonthlyGraphWorker(QThread):
                     grouped_oee = sheet_df.groupby(pd.Grouper(key='Tarih', freq='D'))[
                         'OEE_Degeri_Processed'].mean().reset_index()
                     grouped_oee.dropna(subset=['OEE_Degeri_Processed'], inplace=True)
+
+                    # Yarı değer çizgisini hesapla
+                    grouped_oee['OEE_Degeri_Half'] = grouped_oee['OEE_Degeri_Processed'] / 2
 
                     if grouped_oee.empty:
                         logging.warning(
@@ -1461,6 +1471,23 @@ class MonthlyGraphsPage(QWidget):
             ax.plot(x_indices, oee_values, marker='o', markersize=8, color=line_color, linewidth=2, label=name)
             ax.plot(x_indices, oee_values, 'o', markersize=6, color='white', markeredgecolor=line_color,
                     markeredgewidth=1.5, zorder=5)
+
+            # Yarı değer çizgisini ekle (sadece sayfa grafikleri için)
+            if self.current_graph_mode == "page" and 'OEE_Degeri_Half' in grouped_oee.columns:
+                half_oee_values = grouped_oee['OEE_Degeri_Half']
+                ax.plot(x_indices, half_oee_values, color='#ADD8E6', linestyle='--', linewidth=1.5,
+                        label='Çift Vardiya Durumunda Ay OEE (%)')
+                ax.plot(x_indices, half_oee_values, 'o', markersize=6, markerfacecolor='#ADD8E6',
+                        markeredgecolor='#ADD8E6', markeredgewidth=1.5, zorder=6)
+
+                # Yarı değer çizgisinin ortalama değerini legend'a ekle
+                if not half_oee_values.empty:
+                    average_half_oee = half_oee_values.mean()
+                    if pd.notna(average_half_oee):
+                        # Mevcut legend'a eklemek yerine, ayrı bir metin olarak sağa ekleyelim
+                        ax.text(1.01, average_half_oee, f'{average_half_oee * 100:.1f}% (Çift Vardiya Ort.)',
+                                transform=ax.transAxes, color='#ADD8E6', va='center', ha='left', fontsize=9,
+                                fontweight='bold')
 
             for i, (x, y) in enumerate(zip(x_indices, oee_values)):
                 if pd.notna(y) and y > 0:
