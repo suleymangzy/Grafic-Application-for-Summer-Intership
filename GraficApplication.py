@@ -1045,9 +1045,10 @@ class MonthlyGraphWorker(QThread):
                 metric_sums = all_metrics_sum[all_metrics_sum > 0].sort_values(ascending=False)
 
                 # Calculate cumulative sum and percentage
-                cumulative_sum = metric_sums.cumsum()
-                # Cumulative percentage is based on the sum of *plotted* metrics for the line
-                cumulative_percentage = (cumulative_sum / metric_sums.sum()) * 100
+                # The cumulative percentage for the line should be based on the *total sum of all metrics*,
+                # not just the sum of the currently plotted (pareto) metrics.
+                cumulative_sum_for_line = metric_sums.cumsum()
+                cumulative_percentage_for_line = (cumulative_sum_for_line / total_sum_of_all_metrics) * 100
 
                 # Log the time and percentage values for all metrics
                 logging.info("Dizgi Duruş Pareto Grafiği Metrikleri:")
@@ -1060,7 +1061,7 @@ class MonthlyGraphWorker(QThread):
                         f"  - {metric_name}: Süre: {duration_hours:02d}:{duration_minutes:02d}:{duration_seconds:02d}, Yüzde: {percentage:.1f}%")
 
                 # Select metrics around 80% (a bit below/above is acceptable)
-                pareto_metrics = metric_sums[cumulative_percentage <= 85]
+                pareto_metrics = metric_sums[cumulative_percentage_for_line <= 85]
                 if pareto_metrics.empty and not metric_sums.empty:
                     pareto_metrics = metric_sums.head(1)
                 elif pareto_metrics.empty and metric_sums.empty:
@@ -1069,9 +1070,13 @@ class MonthlyGraphWorker(QThread):
                     self.finished.emit([], self.prev_year_oee, self.prev_month_oee)
                     return
 
-                # Pass both the pareto metrics and the total sum of all metrics
-                figures_data.append(("Genel Dizgi Duruş", {"metrics": pareto_metrics.to_dict(),
-                                                           "total_overall_sum": total_sum_of_all_metrics}))
+                # Pass both the pareto metrics and the total sum of all metrics, and the cumulative percentages for the line
+                figures_data.append(("Genel Dizgi Duruş", {
+                    "metrics": pareto_metrics.to_dict(),
+                    "total_overall_sum": total_sum_of_all_metrics,
+                    "cumulative_percentages": cumulative_percentage_for_line[pareto_metrics.index].to_dict()
+                    # Pass only for plotted metrics
+                }))
                 logging.info(f"MonthlyGraphWorker: General Dizgi Duruş data prepared.")
                 self.progress.emit(100)
 
@@ -1530,12 +1535,10 @@ class MonthlyGraphsPage(QWidget):
             # Extract metrics and total_overall_sum from the data_container
             metric_sums_dict = data_container["metrics"]
             total_overall_sum = data_container["total_overall_sum"]
+            cumulative_percentages_dict = data_container["cumulative_percentages"]
 
             metric_sums = pd.Series(metric_sums_dict)
-
-            cumulative_sum = metric_sums.cumsum()
-            cumulative_percentage = (
-                                                cumulative_sum / metric_sums.sum()) * 100  # This cumulative percentage is for the line on the graph, based on the *plotted* metrics
+            cumulative_percentage = pd.Series(cumulative_percentages_dict)
 
             ax2 = ax.twinx()
 
@@ -1546,6 +1549,10 @@ class MonthlyGraphsPage(QWidget):
 
             ax2.plot(metric_sums.index, cumulative_percentage, color=line_color, marker='o', linestyle='-', linewidth=2,
                      markersize=6)
+
+            # Remove horizontal grid lines
+            ax.grid(False)
+            ax2.grid(False)
 
             for i, bar in enumerate(bars):
                 value_seconds = metric_sums.values[i]
@@ -1569,7 +1576,33 @@ class MonthlyGraphsPage(QWidget):
             ax2.set_ylabel("Kümülatif Yüzde (%)", fontsize=12, fontweight='bold', color=line_color)
 
             ax.tick_params(axis='x', rotation=45)
-            ax.set_title(f"Genel Dizgi Duruş Pareto Analizi", fontsize=16, color='#2c3e50', fontweight='bold')
+
+            # Dynamic title for Pareto chart
+            chart_title = "Genel Dizgi Duruş Pareto Analizi"  # Default title
+
+            if not self.main_window.df.empty and 'Tarih' in self.main_window.df.columns:
+                df_dates = pd.to_datetime(self.main_window.df['Tarih'], errors='coerce').dropna()
+
+                if not df_dates.empty:
+                    min_date = df_dates.min()
+                    max_date = df_dates.max()
+
+                    month_names_turkish = {
+                        1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                        7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+                    }
+
+                    if min_date.month == max_date.month and min_date.year == max_date.year:
+                        month_name = month_names_turkish.get(min_date.month, min_date.strftime('%B')).capitalize()
+                        chart_title = f"{month_name} Ayı Dizgi Duruşları"
+                    elif min_date.year == max_date.year:
+                        first_month_name = month_names_turkish.get(min_date.month, min_date.strftime('%B')).capitalize()
+                        last_month_name = month_names_turkish.get(max_date.month, max_date.strftime('%B')).capitalize()
+                        chart_title = f"{min_date.year} Yılı {first_month_name}-{last_month_name} Ayları Dizgi Duruşları"
+                    else:
+                        chart_title = f"{min_date.year}-{max_date.year} Yılları Dizgi Duruşları"
+
+            ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
 
             ax.set_ylim(bottom=0)
             ax2.set_ylim(0, 100)
