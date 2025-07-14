@@ -543,7 +543,7 @@ class DataSelectionPage(QWidget):
         df = self.main_window.df
 
         if selected_grouping_val and self.main_window.grouping_col_name and self.main_window.grouped_col_name:
-            filtered_df = df[filtered_df[self.main_window.grouping_col_name].astype(str) == selected_grouping_val]
+            filtered_df = df[df[self.main_window.grouping_col_name].astype(str) == selected_grouping_val]
             grouped_vals = sorted(filtered_df[self.main_window.grouped_col_name].dropna().astype(str).unique())
             grouped_vals = [s for s in grouped_vals if s.strip()]
 
@@ -1403,8 +1403,8 @@ class MonthlyGraphsPage(QWidget):
         fig_height_inches = 8.0
 
         fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), dpi=100)
-        # Grafik arka plan rengini görseldeki gibi gri yap
-        background_color = '#808080'
+        # Grafik arka plan rengini beyaza yap
+        background_color = 'white'
         fig.patch.set_facecolor(background_color)
         ax.set_facecolor(background_color)
 
@@ -1623,7 +1623,7 @@ class MonthlyGraphsPage(QWidget):
                         chart_title = f"{min_date.year}-{max_date.year} Yılları Dizgi Duruşları"
 
             # Başlık rengini görseldeki gibi koyu gri yap
-            ax.set_title(chart_title, fontsize=16, color='#363636', fontweight='bold')
+            ax.set_title(chart_title, fontsize=20, color='#363636', fontweight='bold')  # Başlık boyutu arttırıldı
 
             ax.set_ylim(bottom=0)
             ax2.set_ylim(0, 100)
