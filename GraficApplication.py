@@ -3,7 +3,7 @@ import logging
 import datetime
 from pathlib import Path
 import re
-from typing import List, Tuple, Any, Union, Dict  # Dict de eklendi, ancak dict tercih ediliyor
+from typing import List, Tuple, Any, Union, Dict
 
 import pandas as pd
 import numpy as np
@@ -37,6 +37,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QLineEdit,
 )
+from PyQt5 import QtGui # Added for QDoubleValidator
 
 # Her sayfada kaç grafik gösterileceği
 GRAPHS_PER_PAGE = 1
@@ -101,7 +102,8 @@ def seconds_from_timedelta(series: pd.Series) -> pd.Series:
 
     str_and_timedelta_mask = ~is_time_obj & series.notna()
     if str_and_timedelta_mask.any():
-        converted_td = pd.to_timedelta(series.loc[str_and_timedelta_mask].astype(str).strip(), errors='coerce')
+        # Corrected: Use .str.strip() for Series of strings
+        converted_td = pd.to_timedelta(series.loc[str_and_timedelta_mask].astype(str).str.strip(), errors='coerce')
         valid_td_mask = pd.notna(converted_td)
         seconds_series.loc[str_and_timedelta_mask & valid_td_mask] = converted_td[valid_td_mask].dt.total_seconds()
 
@@ -236,10 +238,14 @@ class GraphPlotter:
         top_3_colors = chart_colors[:len(top_3_metrics)]
 
         for i, (metric_name, metric_value) in enumerate(top_3_metrics.items()):
+            duration_hours = int(metric_value // 3600)
+            duration_minutes = int((metric_value % 3600) // 60)
+            duration_seconds = int(metric_value % 60) # Calculate seconds for donut chart
             label_text = (
                 f"{i + 1}. {metric_name}; "
-                f"{int(metric_value // 3600):02d}:"
-                f"{int((metric_value % 3600) // 60):02d}; "
+                f"{duration_hours:02d}:"
+                f"{duration_minutes:02d}:"
+                f"{duration_seconds:02d}; " # Updated to HH:MM:SS
                 f"{metric_value / sorted_metrics_series.sum() * 100:.0f}%"
             )
             y_pos = label_y_start - (i * label_line_height)
@@ -300,7 +306,8 @@ class GraphPlotter:
             percentage = (value / total_sum) * 100 if total_sum > 0 else 0
             duration_hours = int(value // 3600)
             duration_minutes = int((value % 3600) // 60)
-            text_label = f"{duration_hours:02d}:{duration_minutes:02d} ({percentage:.0f}%)"
+            duration_seconds = int(value % 60) # Calculate seconds
+            text_label = f"{duration_hours:02d}:{duration_minutes:02d}:{duration_seconds:02d} ({percentage:.0f}%)" # Update format
 
             text_x_position = (value / 60) + 0.5
             ax.text(text_x_position, i, text_label,
@@ -829,7 +836,9 @@ class DailyGraphsPage(QWidget):
             canvas = FigureCanvas(fig)
             canvas.setFixedSize(700, 460)
             self.vbox_canvases.addWidget(canvas)
-            self.lbl_chart_info.setText(f"{self.main_window.selected_grouping_val} - {grouped_val}")
+            # MODIFICATION 1: Remove "HAT-#" from the displayed title
+            display_grouped_val = grouped_val.replace("HAT-#", "").strip()
+            self.lbl_chart_info.setText(f"{self.main_window.selected_grouping_val} - {display_grouped_val}")
 
         self.update_page_label()
         self.update_navigation_buttons()
@@ -1116,6 +1125,7 @@ class MonthlyGraphsPage(QWidget):
         prev_year_oee_layout.addWidget(QLabel("Önceki Yılın OEE Değeri (%):"))
         self.txt_prev_year_oee = QLineEdit()
         self.txt_prev_year_oee.setPlaceholderText("Örn: 85.5")
+        self.txt_prev_year_oee.setValidator(QtGui.QDoubleValidator(0.0, 100.0, 2)) # Added validator
         prev_year_oee_layout.addWidget(self.txt_prev_year_oee)
         oee_options_layout.addLayout(prev_year_oee_layout)
 
@@ -1123,6 +1133,7 @@ class MonthlyGraphsPage(QWidget):
         prev_month_oee_layout.addWidget(QLabel("Önceki Ayın OEE Değeri (%):"))
         self.txt_prev_month_oee = QLineEdit()
         self.txt_prev_month_oee.setPlaceholderText("Örn: 82.0")
+        self.txt_prev_month_oee.setValidator(QtGui.QDoubleValidator(0.0, 100.0, 2)) # Added validator
         prev_month_oee_layout.addWidget(self.txt_prev_month_oee)
         oee_options_layout.addLayout(prev_month_oee_layout)
 
@@ -1471,6 +1482,7 @@ class MonthlyGraphsPage(QWidget):
                       fontsize=10,
                       title_fontsize=12)
 
+            # MODIFICATION: Use the exact chart title as requested
             chart_title = f"Dizgi Onay Dağılımı"
             ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
             fig.tight_layout()  # Grafiğin sıkışmasını önle
@@ -1552,6 +1564,7 @@ class MainWindow(QMainWindow):
         self.metric_cols: List[str] = []
         self.grouped_values: List[str] = []
         self.selected_metrics: List[str] = []
+        self.selected_grouping_val: str = "" # Initialize selected_grouping_val
 
         self.stacked_widget = QStackedWidget()
         self.file_selection_page = FileSelectionPage(self)
@@ -1714,31 +1727,48 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            if self.selected_sheet == "SMD-OEE":
-                self.df = pd.read_excel(self.excel_path, sheet_name=self.selected_sheet)
-                self.df.columns = self.df.columns.astype(str)
-            else:
-                self.df = pd.read_excel(self.excel_path, sheet_name=self.selected_sheet, header=None, skiprows=[0])
-                self.df.columns = [str(col) for col in self.df.columns]
+            # Always read the header (first row) for all sheets
+            self.df = pd.read_excel(self.excel_path, sheet_name=self.selected_sheet, header=0)
+            self.df.columns = self.df.columns.astype(str) # Ensure column names are strings
 
             self.df.attrs['excel_path'] = self.excel_path
             self.df.attrs['selected_sheet'] = self.selected_sheet
 
             logging.info("'%s' sayfasından veri yüklendi. Satır sayısı: %d", self.selected_sheet, len(self.df))
 
+            # Initialize with default values, then override based on sheet
             self.grouping_col_name = self.df.columns[excel_col_to_index('A')]
             self.grouped_col_name = self.df.columns[excel_col_to_index('B')]
-            self.oee_col_name = self.df.columns[excel_col_to_index('BP')] if excel_col_to_index('BP') < len(
-                self.df.columns) else None
-
-            start_col_index = excel_col_to_index('H')
-            end_col_index = excel_col_to_index('BD')
-            ap_col_index = excel_col_to_index('AP')
-
+            self.oee_col_name = None # Default to None, set if applicable
             self.metric_cols = []
-            for i in range(start_col_index, end_col_index + 1):
-                if i < len(self.df.columns) and i != ap_col_index:
-                    self.metric_cols.append(self.df.columns[i])
+
+            if self.selected_sheet == "SMD-OEE":
+                self.oee_col_name = self.df.columns[excel_col_to_index('BP')] if excel_col_to_index('BP') < len(self.df.columns) else None
+                start_col_index = excel_col_to_index('H')
+                end_col_index = excel_col_to_index('BD')
+                ap_col_index = excel_col_to_index('AP')
+                for i in range(start_col_index, end_col_index + 1):
+                    if i < len(self.df.columns) and i != ap_col_index:
+                        self.metric_cols.append(self.df.columns[i])
+            elif self.selected_sheet == "ROBOT":
+                # For ROBOT, metrics are from H to AU
+                # OEE column is explicitly None based on previous logs
+                start_col_index = excel_col_to_index('H')
+                end_col_index = excel_col_to_index('AU') # As per user request
+                ao_col_index = excel_col_to_index('AO') # Get index for 'AO' column
+
+                for i in range(start_col_index, end_col_index + 1):
+                    if i < len(self.df.columns) and i != ao_col_index: # Skip 'AO' column
+                        self.metric_cols.append(self.df.columns[i])
+            elif self.selected_sheet == "DALGA_LEHİM":
+                # Assuming similar structure to SMD-OEE for now, adjust if needed
+                self.oee_col_name = self.df.columns[excel_col_to_index('BP')] if excel_col_to_index('BP') < len(self.df.columns) else None
+                start_col_index = excel_col_to_index('H')
+                end_col_index = excel_col_to_index('BD')
+                ap_col_index = excel_col_to_index('AP')
+                for i in range(start_col_index, end_col_index + 1):
+                    if i < len(self.df.columns) and i != ap_col_index:
+                        self.metric_cols.append(self.df.columns[i])
 
             logging.info("Tanımlanan gruplama sütunu: %s", self.grouping_col_name)
             logging.info("Tanımlanan gruplanan sütun: %s", self.grouped_col_name)
