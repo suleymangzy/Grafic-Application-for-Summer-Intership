@@ -1082,7 +1082,7 @@ class MonthlyGraphWorker(QThread):
                 sheets_to_process_info = [
                     ("DALGA_LEHİM", "BP"),
                     ("ROBOT", "BG"),
-                    ("SMD-OEE", "BP"),  # KAPLAMA-OEE yerine SMD-OEE kullanıldı, BP sütunu için
+                    # ("SMD-OEE", "BP"), # KAPLAMA-OEE yerine SMD-OEE kullanıldı, BP sütunu için - KULLANICI İSTEĞİ ÜZERİNE KALDIRILDI
                     ("KAPLAMA-OEE", "BG")  # Eğer ayrı bir KAPLAMA-OEE sayfası varsa ve BG sütunu kullanıyorsa
                 ]
 
@@ -1095,7 +1095,7 @@ class MonthlyGraphWorker(QThread):
                 total_items = len(available_sheets_for_page_mode)
                 if not available_sheets_for_page_mode:
                     self.error.emit(
-                        "Sayfa grafikleri için işlenecek uygun sayfa bulunamadı (DALGA_LEHİM, ROBOT, SMD-OEE/KAPLAMA-OEE).")
+                        "Sayfa grafikleri için işlenecek uygun sayfa bulunamadı (DALGA_LEHİM, ROBOT, KAPLAMA-OEE).")
                     return
 
                 for i, (sheet_name, oee_col_letter) in enumerate(available_sheets_for_page_mode):
