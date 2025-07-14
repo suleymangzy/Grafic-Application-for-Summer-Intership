@@ -1383,8 +1383,8 @@ class MonthlyGraphsPage(QWidget):
         hat_name, data_list = self.figures_data_monthly[self.current_page_monthly]
 
         # Güncellenen boyutlar
-        fig_width_inches = 8.0  # 800 piksel
-        fig_height_inches = 5.0  # 500 piksel
+        fig_width_inches = 17.0  # 1700 piksel
+        fig_height_inches = 8.0  # 800 piksel
 
         fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), dpi=100)
         background_color = 'white'
@@ -1394,8 +1394,9 @@ class MonthlyGraphsPage(QWidget):
         # Üst kenarın görünürlüğünü kapat
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_visible(False)
-        ax.spines['bottom'].set_visible(False)
+        # Eksen çizgilerinin kalınlıklarını düşür
+        ax.spines['left'].set_linewidth(1.5) # Geri alındı
+        ax.spines['bottom'].set_linewidth(1.5) # Geri alındı
         ax.grid(False)
 
         if self.cmb_monthly_graph_type.currentText() == "OEE Grafikleri":
