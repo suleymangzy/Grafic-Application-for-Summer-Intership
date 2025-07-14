@@ -543,7 +543,7 @@ class DataSelectionPage(QWidget):
         df = self.main_window.df
 
         if selected_grouping_val and self.main_window.grouping_col_name and self.main_window.grouped_col_name:
-            filtered_df = df[df[self.main_window.grouping_col_name].astype(str) == selected_grouping_val]
+            filtered_df = df[filtered_df[self.main_window.grouping_col_name].astype(str) == selected_grouping_val]
             grouped_vals = sorted(filtered_df[self.main_window.grouped_col_name].dropna().astype(str).unique())
             grouped_vals = [s for s in grouped_vals if s.strip()]
 
@@ -1403,7 +1403,8 @@ class MonthlyGraphsPage(QWidget):
         fig_height_inches = 8.0
 
         fig, ax = plt.subplots(figsize=(fig_width_inches, fig_height_inches), dpi=100)
-        background_color = 'white'
+        # Grafik arka plan rengini görseldeki gibi gri yap
+        background_color = '#808080'
         fig.patch.set_facecolor(background_color)
         ax.set_facecolor(background_color)
 
@@ -1551,21 +1552,22 @@ class MonthlyGraphsPage(QWidget):
 
             ax2 = ax.twinx()
 
-            bar_color = '#1f77b4'
-            line_color = 'red'  # Kırmızı renk
+            # Grafik renklendirmesi (görseldeki gibi)
+            bar_color = '#AECDCB'  # Açık teal/grimsi yeşil
+            line_color = '#6B0000'  # Koyu kırmızımsı kahverengi
 
             # Sütunları çiz
-            bars = ax.bar(metric_sums.index, metric_sums.values / 60, color=bar_color, alpha=0.8)
+            bars = ax.bar(metric_sums.index, metric_sums.values / 60, color=bar_color, alpha=0.8, edgecolor='black',
+                          linewidth=1.5)
 
             # Kümülatif yüzde çizgisini çiz (marker olmadan, daha düşük zorder)
             ax2.plot(metric_sums.index, cumulative_percentage, color=line_color, linestyle='-', linewidth=2, zorder=1)
             # Kümülatif yüzde noktalarını çiz (içi boş daireler, daha yüksek zorder)
-            ax2.plot(metric_sums.index, cumulative_percentage, 'o', markersize=8, markerfacecolor='none',
+            ax2.plot(metric_sums.index, cumulative_percentage, 'o', markersize=8, markerfacecolor='white',
                      markeredgecolor=line_color, markeredgewidth=2, zorder=2)
 
-            # %80 noktasında yatay kesikli kırmızı çizgi ekle
-            ax2.axhline(80, color='red', linestyle='--', linewidth=1.5)
-            # ax2.text(ax2.get_xlim()[1] * 1.01, 80, 'Hedef %80', color='red', va='center', ha='left', fontsize=9, fontweight='bold') # Bu satır kaldırıldı
+            # %80 noktasında yatay kesikli kırmızı çizgi ekle (görseldeki gibi gri ve ince)
+            ax2.axhline(80, color='#B0B0B0', linestyle='--', linewidth=1.5)
 
             # Yatay ızgara çizgilerini kaldır
             ax.grid(False)
@@ -1620,7 +1622,8 @@ class MonthlyGraphsPage(QWidget):
                     else:
                         chart_title = f"{min_date.year}-{max_date.year} Yılları Dizgi Duruşları"
 
-            ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
+            # Başlık rengini görseldeki gibi koyu gri yap
+            ax.set_title(chart_title, fontsize=16, color='#363636', fontweight='bold')
 
             ax.set_ylim(bottom=0)
             ax2.set_ylim(0, 100)
