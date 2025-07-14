@@ -42,7 +42,7 @@ from PyQt5 import QtGui
 # Her sayfada kaç grafik gösterileceği
 GRAPHS_PER_PAGE = 1
 # Gerekli Excel sayfa isimleri
-REQ_SHEETS = {"SMD-OEE", "ROBOT", "DALGA_LEHİM"}
+REQ_SHEETS = {"SMD-OEE", "ROBOT", "DALGA_LEHİM", "KAPLAMA-OEE"}  # "KAPLAMA-OEE" eklendi
 
 # Loglama ayarları
 logging.basicConfig(
@@ -371,7 +371,7 @@ class FileSelectionPage(QWidget):
 
             if not sheets:
                 QMessageBox.warning(self, "Uygun sayfa yok",
-                                    "Seçilen dosyada istenen (SMD-OEE, ROBOT, DALGA_LEHİM) sheet bulunamadı.")
+                                    f"Seçilen dosyada istenen ({', '.join(REQ_SHEETS)}) sheet bulunamadı.")
                 self.reset_page()
                 return
 
@@ -379,6 +379,7 @@ class FileSelectionPage(QWidget):
             self.lbl_path.setText(f"Seçilen Dosya: <b>{Path(path).name}</b>")
 
             self.main_window.available_sheets = sheets
+            # SMD-OEE'yi varsayılan olarak seç, yoksa ilk uygun sayfayı seç
             if "SMD-OEE" in sheets:
                 self.main_window.selected_sheet = "SMD-OEE"
             elif sheets:
@@ -402,13 +403,18 @@ class FileSelectionPage(QWidget):
 
     def go_to_monthly_graphs(self) -> None:
         """Aylık grafikler sayfasına gider."""
-        if "SMD-OEE" not in self.main_window.available_sheets:
-            QMessageBox.warning(self, "Uyarı", "Aylık grafikler için 'SMD-OEE' sayfası Excel dosyasında bulunmalıdır.")
+        # Aylık grafikler için SMD-OEE sayfasının yüklenmesi önemli,
+        # çünkü Hat Grafikleri bu sayfadaki verilere dayanır.
+        # Sayfa Grafikleri ise kendi içinde ilgili sayfaları yükleyecektir.
+        if "SMD-OEE" in self.main_window.available_sheets:
+            self.main_window.selected_sheet = "SMD-OEE"
+        elif self.main_window.available_sheets:
+            self.main_window.selected_sheet = self.main_window.available_sheets[0]
+        else:
+            QMessageBox.warning(self, "Uyarı", "Aylık grafikler için uygun sayfa bulunamadı.")
             return
 
-        self.main_window.selected_sheet = "SMD-OEE"
         self.main_window.load_excel()
-
         self.main_window.goto_page(3)
 
     def reset_page(self):
@@ -904,240 +910,259 @@ class MonthlyGraphWorker(QThread):
     progress = pyqtSignal(int)
     error = pyqtSignal(str)
 
-    def __init__(self, df: pd.DataFrame, grouping_col_name: str, grouped_col_name: str, oee_col_name: str,
-                 prev_year_oee: float | None, prev_month_oee: float | None, graph_type: str, main_window: "MainWindow"):
+    def __init__(self, excel_path: Path, current_df: pd.DataFrame, graph_mode: str, graph_type: str,
+                 prev_year_oee: float | None, prev_month_oee: float | None, main_window: "MainWindow"):
         super().__init__()
-        self.df = df.copy()
-        self.grouping_col_name = grouping_col_name
-        self.grouped_col_name = grouped_col_name
-        self.oee_col_name = oee_col_name
+        self.excel_path = excel_path
+        self.current_df = current_df  # This is the df from main_window, usually SMD-OEE
+        self.graph_mode = graph_mode
+        self.graph_type = graph_type
         self.prev_year_oee = prev_year_oee
         self.prev_month_oee = prev_month_oee
-        self.graph_type = graph_type
-        self.main_window = main_window
+        self.main_window = main_window  # Keep reference to main_window to access its properties
 
     def run(self):
         """İş parçacığı başladığında çalışacak metod."""
         try:
-            figures_data: List[Tuple[str, List[dict[str, Any]]]] = []
+            figures_data: List[Tuple[str, Union[List[dict[str, Any]], Dict[str, Any]]]] = []
 
-            df_smd_oee = self.df
-            logging.info(f"MonthlyGraphWorker: Başlangıç veri çerçevesi boyutu: {df_smd_oee.shape}")
+            if self.graph_mode == "hat":
+                df_to_process = self.current_df.copy()
+                grouping_col_name = self.main_window.grouping_col_name
+                grouped_col_name = self.main_window.grouped_col_name
+                oee_col_name = self.main_window.oee_col_name
 
-            # Sütunları dahili tutarlılık için yeniden adlandır
-            col_mapping = {}
-            if self.grouped_col_name in df_smd_oee.columns:
-                col_mapping[self.grouped_col_name] = 'U_Agaci_Sev'
-            if self.grouping_col_name in df_smd_oee.columns:
-                col_mapping[self.grouping_col_name] = 'Tarih'
-            if self.oee_col_name and self.oee_col_name in df_smd_oee.columns:
-                col_mapping[self.oee_col_name] = 'OEE_Degeri'
+                # Sütunları dahili tutarlılık için yeniden adlandır
+                col_mapping = {}
+                if grouping_col_name in df_to_process.columns:
+                    col_mapping[grouping_col_name] = 'Tarih'
+                if grouped_col_name in df_to_process.columns:
+                    col_mapping[grouped_col_name] = 'U_Agaci_Sev'
+                if oee_col_name and oee_col_name in df_to_process.columns:
+                    col_mapping[oee_col_name] = 'OEE_Degeri'
 
-            if col_mapping:
-                df_smd_oee.rename(columns=col_mapping, inplace=True)
-                logging.info(f"MonthlyGraphWorker: Sütunlar yeniden adlandırıldı: {col_mapping}")
-            else:
-                self.error.emit("Gerekli sütunlar (Ürün, Tarih, OEE) Excel dosyasında bulunamadı veya adlandırılamadı.")
-                return
-
-            # 'Tarih' sütununu datetime'a dönüştür ve geçersiz tarihleri temizle
-            if 'Tarih' in df_smd_oee.columns:
-                df_smd_oee['Tarih'] = pd.to_datetime(df_smd_oee['Tarih'], errors='coerce')
-                df_smd_oee.dropna(subset=['Tarih'], inplace=True)
-                logging.info(
-                    f"MonthlyGraphWorker: 'Tarih' sütunu datetime'a dönüştürüldü ve NaT değerleri temizlendi. Yeni boyut: {df_smd_oee.shape}")
-            else:
-                self.error.emit("'Tarih' sütunu bulunamadı.")
-                return
-
-            # 'OEE_Degeri' sütununu float'a dönüştür (sadece OEE grafikleri için)
-            if self.graph_type == "OEE Grafikleri":
-                if 'OEE_Degeri' in df_smd_oee.columns:
-                    logging.info(
-                        f"MonthlyGraphWorker: Dönüşümden önceki 'OEE_Degeri' sütunu (ilk 5 değer ve tipleri):\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
-
-                    df_smd_oee['OEE_Degeri'] = pd.to_numeric(
-                        df_smd_oee['OEE_Degeri'].astype(str).replace('%', '').replace(',', '.'),
-                        errors='coerce'
-                    )
-                    df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'].fillna(0.0)
-
-                    if not df_smd_oee['OEE_Degeri'].empty and df_smd_oee['OEE_Degeri'].max() > 1.0:
-                        df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'] / 100.0
-                        logging.info("MonthlyGraphWorker: OEE_Degeri sütunu 0-1 aralığına ölçeklendi (100'e bölündü).")
-
-                    logging.info(
-                        f"MonthlyGraphWorker: Dönüşüm ve NaN doldurmadan sonraki 'OEE_Degeri' sütunu (ilk 5 değer ve tipleri):\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
-                    logging.info(
-                        f"MonthlyGraphWorker: 'OEE_Degeri' sütunu float'a dönüştürüldü ve geçersiz/boş değerler 0.0 ile dolduruldu. Yeni boyut: {df_smd_oee.shape}")
+                if col_mapping:
+                    df_to_process.rename(columns=col_mapping, inplace=True)
                 else:
-                    self.error.emit("'OEE_Degeri' sütunu bulunamadı.")
+                    self.error.emit("Gerekli sütunlar Excel dosyasında bulunamadı veya adlandırılamadı.")
                     return
 
-            # Dizgi Onay Dağılım Grafiği için 19. indeksi (T sütunu) al
-            dizgi_onay_col_index = excel_col_to_index('T')
-            dizgi_onay_col_name = self.df.columns[dizgi_onay_col_index] if dizgi_onay_col_index < len(
-                self.df.columns) else None
+                # 'Tarih' sütununu datetime'a dönüştür ve geçersiz tarihleri temizle
+                if 'Tarih' in df_to_process.columns:
+                    df_to_process['Tarih'] = pd.to_datetime(df_to_process['Tarih'], errors='coerce')
+                    df_to_process.dropna(subset=['Tarih'], inplace=True)
+                else:
+                    self.error.emit("'Tarih' sütunu bulunamadı.")
+                    return
 
-            # Dizgi Duruş Grafiği için metrik sütunlarını al
-            dizgi_durusu_metric_cols = []
-            if self.main_window.selected_sheet == "SMD-OEE":
+                # 'OEE_Degeri' sütununu float'a dönüştür (sadece OEE grafikleri için)
+                if self.graph_type == "OEE Grafikleri":
+                    if 'OEE_Degeri' in df_to_process.columns:
+                        df_to_process['OEE_Degeri'] = pd.to_numeric(
+                            df_to_process['OEE_Degeri'].astype(str).replace('%', '').replace(',', '.'),
+                            errors='coerce'
+                        )
+                        df_to_process['OEE_Degeri'] = df_to_process['OEE_Degeri'].fillna(0.0)
+
+                        if not df_to_process['OEE_Degeri'].empty and df_to_process['OEE_Degeri'].max() > 1.0:
+                            df_to_process['OEE_Degeri'] = df_to_process['OEE_Degeri'] / 100.0
+                    else:
+                        self.error.emit("'OEE_Degeri' sütunu bulunamadı.")
+                        return
+
+                # Dizgi Onay Dağılım Grafiği için 19. indeksi (T sütunu) al
+                dizgi_onay_col_index = excel_col_to_index('T')
+                dizgi_onay_col_name = self.current_df.columns[dizgi_onay_col_index] if dizgi_onay_col_index < len(
+                    self.current_df.columns) else None
+
+                # Dizgi Duruş Grafiği için metrik sütunlarını al
+                dizgi_durusu_metric_cols = []
                 start_col_index = excel_col_to_index('H')
                 end_col_index = excel_col_to_index('BD')
                 for i in range(start_col_index, end_col_index + 1):
-                    col_name = self.df.columns[i]
-                    if i < len(self.df.columns):
+                    col_name = self.current_df.columns[i]
+                    if i < len(self.current_df.columns):
                         dizgi_durusu_metric_cols.append(col_name)
 
-            if self.graph_type == "Dizgi Onay Dağılım Grafiği":
-                if not dizgi_onay_col_name or dizgi_onay_col_name not in df_smd_oee.columns:
-                    self.error.emit(f"'{dizgi_onay_col_name}' (Dizgi Onay) sütunu bulunamadı veya geçersiz.")
+                if self.graph_type == "Dizgi Onay Dağılım Grafiği":
+                    if not dizgi_onay_col_name or dizgi_onay_col_name not in df_to_process.columns:
+                        self.error.emit(f"'{dizgi_onay_col_name}' (Dizgi Onay) sütunu bulunamadı veya geçersiz.")
+                        return
+                    df_to_process[dizgi_onay_col_name] = seconds_from_timedelta(df_to_process[dizgi_onay_col_name])
+                elif self.graph_type == "Dizgi Duruş Grafiği":
+                    if not dizgi_durusu_metric_cols:
+                        self.error.emit("Dizgi Duruş Grafiği için metrik sütunları bulunamadı.")
+                        return
+                    for col in dizgi_durusu_metric_cols:
+                        if col in df_to_process.columns:
+                            df_to_process[col] = seconds_from_timedelta(df_to_process[col])
+
+                # 'Group_Key' (örn: "HAT-4") çıkar
+                def extract_group_key(s):
+                    s = str(s).upper()
+                    match = re.search(r'HAT(\d+)', s)
+                    if match:
+                        hat_number = match.group(1)
+                        return f"HAT-{hat_number}"
+                    return None
+
+                if 'U_Agaci_Sev' in df_to_process.columns:
+                    df_to_process['Group_Key'] = df_to_process['U_Agaci_Sev'].apply(extract_group_key)
+                    df_to_process.dropna(subset=['Group_Key'], inplace=True)
+                else:
+                    self.error.emit("'U_Agaci_Sev' sütunu bulunamadı.")
                     return
-                df_smd_oee[dizgi_onay_col_name] = seconds_from_timedelta(df_smd_oee[dizgi_onay_col_name])
-                logging.info(f"MonthlyGraphWorker: '{dizgi_onay_col_name}' sütunu saniyeye dönüştürüldü.")
-            elif self.graph_type == "Dizgi Duruş Grafiği":
-                if not dizgi_durusu_metric_cols:
-                    self.error.emit("Dizgi Duruş Grafiği için metrik sütunları bulunamadı.")
+
+                unique_hats = sorted(df_to_process['Group_Key'].unique())
+                target_hat_patterns = {"HAT-1", "HAT-2", "HAT-3", "HAT-4"}
+                filtered_hats = [hat for hat in unique_hats if hat in target_hat_patterns]
+                unique_hats = sorted(filtered_hats)
+                total_items = len(unique_hats)
+
+                if not unique_hats and self.graph_type != "Dizgi Duruş Grafiği":
+                    self.error.emit(
+                        "Grafik oluşturmak için hat verisi bulunamadı. Lütfen Excel dosyasının 'HAT-1', 'HAT-2', 'HAT-3' veya 'HAT-4' için veri içerdiğinden emin olun.")
                     return
-                for col in dizgi_durusu_metric_cols:
-                    if col in df_smd_oee.columns:
-                        df_smd_oee[col] = seconds_from_timedelta(df_smd_oee[col])
-                logging.info(f"MonthlyGraphWorker: Dizgi Duruş metrik sütunları saniyeye dönüştürüldü.")
 
-            # 'Group_Key' (örn: "HAT-4") çıkar
-            def extract_group_key(s):
-                s = str(s).upper()
-                match = re.search(r'HAT(\d+)', s)
-                if match:
-                    hat_number = match.group(1)
-                    return f"HAT-{hat_number}"
-                return None
+                if self.graph_type == "Dizgi Duruş Grafiği":
+                    all_metrics_sum = df_to_process[dizgi_durusu_metric_cols].sum()
+                    total_sum_of_all_metrics = all_metrics_sum.sum()
+                    metric_sums = all_metrics_sum[all_metrics_sum > 0].sort_values(ascending=False)
+                    cumulative_sum_for_line = metric_sums.cumsum()
+                    cumulative_percentage_for_line = (cumulative_sum_for_line / total_sum_of_all_metrics) * 100
 
-            if 'U_Agaci_Sev' in df_smd_oee.columns:
-                df_smd_oee['Group_Key'] = df_smd_oee['U_Agaci_Sev'].apply(extract_group_key)
-                df_smd_oee.dropna(subset=['Group_Key'], inplace=True)
-                logging.info(
-                    f"MonthlyGraphWorker: Group_Key sütunu oluşturuldu ve boş değerler temizlendi. Yeni boyut: {df_smd_oee.shape}")
-            else:
-                self.error.emit("'U_Agaci_Sev' sütunu bulunamadı.")
-                return
+                    pareto_metrics_to_plot = pd.Series(dtype=float)
+                    current_cumulative_percent = 0.0
+                    for idx, (metric_name, value) in enumerate(metric_sums.items()):
+                        percent_of_total = (value / total_sum_of_all_metrics) * 100
+                        current_cumulative_percent += percent_of_total
+                        pareto_metrics_to_plot[metric_name] = value
+                        if current_cumulative_percent >= 80:
+                            if current_cumulative_percent - percent_of_total >= 80 and (
+                                    current_cumulative_percent - 80) > 10:
+                                pareto_metrics_to_plot = pareto_metrics_to_plot.iloc[:-1]
+                            break
+                    if pareto_metrics_to_plot.empty and not metric_sums.empty:
+                        pareto_metrics_to_plot = metric_sums.head(1)
 
-            unique_hats = sorted(df_smd_oee['Group_Key'].unique())
+                    figures_data.append(("Genel Dizgi Duruş", {
+                        "metrics": pareto_metrics_to_plot.to_dict(),
+                        "total_overall_sum": total_sum_of_all_metrics,
+                        "cumulative_percentages": cumulative_percentage_for_line[pareto_metrics_to_plot.index].to_dict()
+                    }))
+                    self.progress.emit(100)
 
-            # Sadece HAT-1, HAT-2, HAT-3, HAT-4 için filtrele
-            target_hat_patterns = {"HAT-1", "HAT-2", "HAT-3", "HAT-4"}
-            filtered_hats = [hat for hat in unique_hats if hat in target_hat_patterns]
-            unique_hats = sorted(filtered_hats)
-            logging.info(f"MonthlyGraphWorker: Hedef hatlar filtrelendi: {unique_hats}")
+                else:
+                    for i, selected_hat in enumerate(unique_hats):
+                        df_smd_oee_filtered_by_hat = df_to_process[df_to_process['Group_Key'] == selected_hat].copy()
+                        if df_smd_oee_filtered_by_hat.empty:
+                            self.progress.emit(int((i + 1) / total_items * 100))
+                            continue
 
-            total_hats = len(unique_hats)
+                        if self.graph_type == "OEE Grafikleri":
+                            grouped_oee = df_smd_oee_filtered_by_hat.groupby(pd.Grouper(key='Tarih', freq='D'))[
+                                'OEE_Degeri'].mean().reset_index()
+                            grouped_oee.dropna(subset=['OEE_Degeri'], inplace=True)
+                            figures_data.append((selected_hat, grouped_oee.to_dict('records')))
 
-            if not unique_hats and self.graph_type != "Dizgi Duruş Grafiği":
-                self.error.emit(
-                    "Grafik oluşturmak için hat verisi bulunamadı. Lütfen Excel dosyasının 'HAT-1', 'HAT-2', 'HAT-3' veya 'HAT-4' için veri içerdiğinden emin olun.")
-                return
+                        elif self.graph_type == "Dizgi Onay Dağılım Grafiği":
+                            current_hat_onay_sum = df_smd_oee_filtered_by_hat[dizgi_onay_col_name].sum()
+                            other_hats_df = df_to_process[df_to_process['Group_Key'] != selected_hat].copy()
+                            other_hats_onay_sum = other_hats_df[dizgi_onay_col_name].sum()
+                            total_onay_sum = current_hat_onay_sum + other_hats_onay_sum
+                            if total_onay_sum > 0:
+                                figures_data.append((selected_hat, [
+                                    {"label": selected_hat, "value": current_hat_onay_sum},
+                                    {"label": "DİĞER HATLAR", "value": other_hats_onay_sum}
+                                ]))
+                        self.progress.emit(int((i + 1) / total_items * 100))
 
-            if self.graph_type == "Dizgi Duruş Grafiği":
-                # Tüm metrik sütunlarının toplamını al (hatlara göre gruplamadan)
-                all_metrics_sum = df_smd_oee[dizgi_durusu_metric_cols].sum()
-                total_sum_of_all_metrics = all_metrics_sum.sum()  # Bu, tüm metriklerin saniye cinsinden toplamıdır
+            elif self.graph_mode == "page" and self.graph_type == "OEE Grafikleri":
+                # Define sheets and their OEE column letters
+                sheets_to_process_info = [
+                    ("DALGA_LEHİM", "BP"),
+                    ("ROBOT", "BG"),
+                    ("SMD-OEE", "BP"),  # KAPLAMA-OEE yerine SMD-OEE kullanıldı, BP sütunu için
+                    ("KAPLAMA-OEE", "BG")  # Eğer ayrı bir KAPLAMA-OEE sayfası varsa ve BG sütunu kullanıyorsa
+                ]
 
-                metric_sums = all_metrics_sum[all_metrics_sum > 0].sort_values(ascending=False)
+                # Filter sheets based on availability in the loaded Excel file
+                available_sheets_for_page_mode = [
+                    (sheet_name, oee_col) for sheet_name, oee_col in sheets_to_process_info
+                    if sheet_name in self.main_window.available_sheets
+                ]
 
-                # Kümülatif toplamı ve yüzdeyi hesapla
-                # Çizgi için kümülatif yüzde, sadece çizilen (pareto) metriklerin toplamına değil,
-                # tüm metriklerin toplamına göre olmalıdır.
-                cumulative_sum_for_line = metric_sums.cumsum()
-                cumulative_percentage_for_line = (cumulative_sum_for_line / total_sum_of_all_metrics) * 100
+                total_items = len(available_sheets_for_page_mode)
+                if not available_sheets_for_page_mode:
+                    self.error.emit(
+                        "Sayfa grafikleri için işlenecek uygun sayfa bulunamadı (DALGA_LEHİM, ROBOT, SMD-OEE/KAPLAMA-OEE).")
+                    return
 
-                # Log the time and percentage values for all metrics
-                logging.info("Dizgi Duruş Pareto Grafiği Metrikleri:")
-                for metric_name, value_seconds in metric_sums.items():
-                    percentage = (value_seconds / total_sum_of_all_metrics) * 100 if total_sum_of_all_metrics > 0 else 0
-                    duration_hours = int(value_seconds // 3600)
-                    duration_minutes = int((value_seconds % 3600) // 60)
-                    duration_seconds = int(value_seconds % 60)
+                for i, (sheet_name, oee_col_letter) in enumerate(available_sheets_for_page_mode):
                     logging.info(
-                        f"  - {metric_name}: Süre: {duration_hours:02d}:{duration_minutes:02d}:{duration_seconds:02d}, Yüzde: {percentage:.1f}%")
+                        f"MonthlyGraphWorker (Page Mode): '{sheet_name}' sayfası için OEE grafiği oluşturuluyor...")
 
-                # Sütun kıstası %80 kuralına göre ayarla
-                pareto_metrics_to_plot = pd.Series(dtype=float)
-                current_cumulative_percent = 0.0
-                for idx, (metric_name, value) in enumerate(metric_sums.items()):
-                    percent_of_total = (value / total_sum_of_all_metrics) * 100
-                    current_cumulative_percent += percent_of_total
-                    pareto_metrics_to_plot[metric_name] = value
-
-                    if current_cumulative_percent >= 80:
-                        # %80'i ilk geçtiği metrik
-                        if current_cumulative_percent - percent_of_total >= 80 and (
-                                current_cumulative_percent - 80) > 10:
-                            # Eğer %80'i 10'dan fazla geçtiyse, bir önceki metriğe kadar al
-                            pareto_metrics_to_plot = pareto_metrics_to_plot.iloc[:-1]
-                        break  # %80'i geçtikten sonra döngüyü sonlandır
-
-                if pareto_metrics_to_plot.empty and not metric_sums.empty:
-                    pareto_metrics_to_plot = metric_sums.head(1)  # En az bir metrik göster
-
-                # Pass both the pareto metrics and the total sum of all metrics, and the cumulative percentages for the line
-                figures_data.append(("Genel Dizgi Duruş", {
-                    "metrics": pareto_metrics_to_plot.to_dict(),  # Sadece çizilecek metrikleri gönder
-                    "total_overall_sum": total_sum_of_all_metrics,
-                    "cumulative_percentages": cumulative_percentage_for_line[pareto_metrics_to_plot.index].to_dict()
-                    # Sadece çizilecek metriklerin kümülatif yüzdelerini gönder
-                }))
-                logging.info(f"MonthlyGraphWorker: Genel Dizgi Duruş verisi hazırlandı.")
-                self.progress.emit(100)
-
-            else:  # Existing hat-based loop for OEE Graphs and Dizgi Onay Dağılım Graph
-                for i, selected_hat in enumerate(unique_hats):
-                    logging.info(f"MonthlyGraphWorker: '{selected_hat}' için grafik oluşturuluyor...")
-                    df_smd_oee_filtered_by_hat = df_smd_oee[df_smd_oee['Group_Key'] == selected_hat].copy()
-
-                    if df_smd_oee_filtered_by_hat.empty:
-                        logging.warning(
-                            f"MonthlyGraphWorker: Seçilen '{selected_hat}' hattı için veri bulunamadı, atlanıyor.")
-                        self.progress.emit(int((i + 1) / total_hats * 100))
+                    try:
+                        sheet_df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=0)
+                        sheet_df.columns = sheet_df.columns.astype(str)  # Ensure columns are strings
+                    except Exception as e:
+                        logging.warning(f"'{sheet_name}' sayfası yüklenirken hata oluştu: {e}. Atlanıyor.")
+                        self.progress.emit(int((i + 1) / total_items * 100))
                         continue
 
-                    if self.graph_type == "OEE Grafikleri":
-                        # Tarihe göre grupla ve OEE ortalamasını hesapla
-                        grouped_oee = df_smd_oee_filtered_by_hat.groupby(pd.Grouper(key='Tarih', freq='D'))[
-                            'OEE_Degeri'].mean().reset_index()
-                        grouped_oee.dropna(subset=['OEE_Degeri'], inplace=True)
-                        figures_data.append((selected_hat, grouped_oee.to_dict('records')))
-                        logging.info(f"MonthlyGraphWorker: '{selected_hat}' için OEE verisi hazırlandı.")
+                    # Tarih sütununu al (A sütunu)
+                    tarih_col_name = sheet_df.columns[excel_col_to_index('A')] if excel_col_to_index('A') < len(
+                        sheet_df.columns) else None
+                    if not tarih_col_name or tarih_col_name not in sheet_df.columns:
+                        logging.warning(
+                            f"MonthlyGraphWorker (Page Mode): '{sheet_name}' sayfasında 'A' sütunu (Tarih) bulunamadı. Atlanıyor.")
+                        self.progress.emit(int((i + 1) / total_items * 100))
+                        continue
 
-                    elif self.graph_type == "Dizgi Onay Dağılım Grafiği":
-                        # Dizgi Onay metriği için toplam değerleri al
-                        current_hat_onay_sum = df_smd_oee_filtered_by_hat[dizgi_onay_col_name].sum()
+                    # OEE sütununu al
+                    current_oee_col_index = excel_col_to_index(oee_col_letter)
+                    current_oee_col_name = sheet_df.columns[current_oee_col_index] if current_oee_col_index < len(
+                        sheet_df.columns) else None
 
-                        # Diğer hatlar için Dizgi Onay toplamını hesapla
-                        other_hats_df = df_smd_oee[df_smd_oee['Group_Key'] != selected_hat].copy()
-                        other_hats_onay_sum = other_hats_df[dizgi_onay_col_name].sum()
+                    if not current_oee_col_name or current_oee_col_name not in sheet_df.columns:
+                        logging.warning(
+                            f"MonthlyGraphWorker (Page Mode): '{sheet_name}' sayfası için '{oee_col_letter}' ({current_oee_col_name}) sütunu bulunamadı veya geçersiz. Atlanıyor.")
+                        self.progress.emit(int((i + 1) / total_items * 100))
+                        continue
 
-                        total_onay_sum = current_hat_onay_sum + other_hats_onay_sum
+                    sheet_df['Tarih'] = pd.to_datetime(sheet_df[tarih_col_name], errors='coerce')
+                    sheet_df.dropna(subset=['Tarih'], inplace=True)
 
-                        logging.info(
-                            f"Dizgi Onay Dağılımı - Hat: {selected_hat}, Bu Hat Toplam: {current_hat_onay_sum:.2f} saniye, Diğer Hatlar Toplam: {other_hats_onay_sum:.2f} saniye")
+                    if sheet_df.empty:
+                        logging.warning(
+                            f"MonthlyGraphWorker (Page Mode): '{sheet_name}' sayfası için tarih verisi bulunamadı. Atlanıyor.")
+                        self.progress.emit(int((i + 1) / total_items * 100))
+                        continue
 
-                        if total_onay_sum > 0:
-                            figures_data.append((selected_hat, [
-                                {"label": selected_hat, "value": current_hat_onay_sum},
-                                {"label": "DİĞER HATLAR", "value": other_hats_onay_sum}
-                            ]))
-                            logging.info(f"MonthlyGraphWorker: '{selected_hat}' için Dizgi Onay verisi hazırlandı.")
-                        else:
-                            logging.warning(
-                                f"MonthlyGraphWorker: '{selected_hat}' için Dizgi Onay verisi bulunamadı veya toplam sıfır, atlanıyor.")
+                    # OEE sütununu sayısal değere dönüştür
+                    sheet_df['OEE_Degeri_Processed'] = pd.to_numeric(
+                        sheet_df[current_oee_col_name].astype(str).replace('%', '').replace(',', '.'),
+                        errors='coerce'
+                    )
+                    sheet_df['OEE_Degeri_Processed'] = sheet_df['OEE_Degeri_Processed'].fillna(0.0)
+                    if not sheet_df['OEE_Degeri_Processed'].empty and sheet_df['OEE_Degeri_Processed'].max() > 1.0:
+                        sheet_df['OEE_Degeri_Processed'] = sheet_df['OEE_Degeri_Processed'] / 100.0
 
-                    self.progress.emit(int((i + 1) / total_hats * 100))
-                    logging.info(
-                        f"MonthlyGraphWorker: '{selected_hat}' için veri hazırlandı. İlerleme: {int((i + 1) / total_hats * 100)}%")
+                    # Tarihe göre grupla ve OEE ortalamasını hesapla
+                    grouped_oee = sheet_df.groupby(pd.Grouper(key='Tarih', freq='D'))[
+                        'OEE_Degeri_Processed'].mean().reset_index()
+                    grouped_oee.dropna(subset=['OEE_Degeri_Processed'], inplace=True)
 
-            # Tüm verileri ve OEE değerlerini sinyal aracılığıyla gönder
+                    if grouped_oee.empty:
+                        logging.warning(
+                            f"MonthlyGraphWorker (Page Mode): '{sheet_name}' sayfası için işlenecek OEE verisi bulunamadı. Atlanıyor.")
+                        self.progress.emit(int((i + 1) / total_items * 100))
+                        continue
+
+                    figures_data.append((sheet_name, grouped_oee.to_dict('records')))
+                    self.progress.emit(int((i + 1) / total_items * 100))
+
             self.finished.emit(figures_data, self.prev_year_oee, self.prev_month_oee)
-            logging.info("MonthlyGraphWorker: Tüm aylık grafik verileri başarıyla hazırlandı.")
         except Exception as exc:
             logging.exception("MonthlyGraphWorker hatası oluştu.")
             self.error.emit(f"Aylık grafik oluşturulurken bir hata oluştu: {str(exc)}")
@@ -1155,12 +1180,12 @@ class MonthlyGraphsPage(QWidget):
         self.monthly_chart_layout.setAlignment(Qt.AlignCenter)
 
         self.current_monthly_chart_figure = None
-        self.figures_data_monthly: List[
-            Tuple[str, Union[List[dict[str, Any]], Dict[str, Any]]]] = []  # Updated type hint
+        self.figures_data_monthly: List[Tuple[str, Union[List[dict[str, Any]], Dict[str, Any]]]] = []
         self.current_page_monthly = 0
         self.monthly_worker: MonthlyGraphWorker | None = None
         self.prev_year_oee_for_plot: float | None = None
         self.prev_month_oee_for_plot: float | None = None
+        self.current_graph_mode: str = "hat"  # Default graph mode
 
         self.init_ui()
 
@@ -1202,11 +1227,14 @@ class MonthlyGraphsPage(QWidget):
 
         oee_buttons_layout = QHBoxLayout()
         self.btn_line_chart = QPushButton("Hat Grafikleri")
-        self.btn_line_chart.clicked.connect(self._start_monthly_graph_worker)
+        # _start_monthly_graph_worker'a graph_mode parametresi eklendi
+        self.btn_line_chart.clicked.connect(lambda: self._start_monthly_graph_worker(graph_mode="hat"))
         self.btn_line_chart.setEnabled(False)
         oee_buttons_layout.addWidget(self.btn_line_chart)
 
         self.btn_page_chart = QPushButton("Sayfa Grafikleri")
+        # _start_monthly_graph_worker'a graph_mode parametresi eklendi
+        self.btn_page_chart.clicked.connect(lambda: self._start_monthly_graph_worker(graph_mode="page"))
         self.btn_page_chart.setEnabled(False)
         oee_buttons_layout.addWidget(self.btn_page_chart)
         oee_options_layout.addLayout(oee_buttons_layout)
@@ -1262,12 +1290,15 @@ class MonthlyGraphsPage(QWidget):
         """Grafiği temizler ve bu sayfaya girildiğinde düğme durumlarını günceller."""
         self.clear_monthly_chart_canvas()
         self.btn_save_monthly_chart.setEnabled(False)
-        self.update_monthly_page_label()
-        self.update_monthly_navigation_buttons()
-        if self.cmb_monthly_graph_type.currentText() == "OEE Grafikleri":
+        self.update_monthly_page_label(graph_mode=self.current_graph_mode)
+        self.update_monthly_navigation_buttons(graph_mode=self.current_graph_mode)
+        selected_type = self.cmb_monthly_graph_type.currentText()
+        if selected_type == "OEE Grafikleri":
             self.btn_line_chart.setEnabled(True)
+            self.btn_page_chart.setEnabled(True)
         else:
             self.btn_line_chart.setEnabled(False)
+            self.btn_page_chart.setEnabled(False)
 
     def on_monthly_graph_type_changed(self, index: int):
         """Aylık grafik türü seçimi değiştiğinde ilgili seçenekleri gösterir/gizler."""
@@ -1276,27 +1307,30 @@ class MonthlyGraphsPage(QWidget):
         self.btn_save_monthly_chart.setEnabled(False)
         self.figures_data_monthly.clear()
         self.current_page_monthly = 0
-        self.update_monthly_page_label()
-        self.update_monthly_navigation_buttons()
 
+        # Reset current_graph_mode based on the selected type
         if selected_type == "OEE Grafikleri":
+            self.current_graph_mode = "hat"  # Default to hat when OEE is selected
             self.oee_options_widget.show()
             self.other_graphs_widget.hide()
             self.btn_line_chart.setEnabled(True)
-        elif selected_type == "Dizgi Onay Dağılım Grafiği":
+            self.btn_page_chart.setEnabled(True)
+        elif selected_type in ["Dizgi Onay Dağılım Grafiği", "Dizgi Duruş Grafiği"]:
+            self.current_graph_mode = "hat"  # These types are always hat mode
             self.oee_options_widget.hide()
             self.other_graphs_widget.show()
             self.btn_line_chart.setEnabled(False)
-            self._start_monthly_graph_worker()
-        elif selected_type == "Dizgi Duruş Grafiği":
-            self.oee_options_widget.hide()
-            self.other_graphs_widget.show()
-            self.btn_line_chart.setEnabled(False)
-            self._start_monthly_graph_worker()
+            self.btn_page_chart.setEnabled(False)
+            self._start_monthly_graph_worker(graph_mode="hat")  # Auto-start for these types
         else:
+            self.current_graph_mode = "hat"  # Fallback
             self.oee_options_widget.hide()
             self.other_graphs_widget.show()
             self.btn_line_chart.setEnabled(False)
+            self.btn_page_chart.setEnabled(False)
+
+        self.update_monthly_page_label(graph_mode=self.current_graph_mode)
+        self.update_monthly_navigation_buttons(graph_mode=self.current_graph_mode)
 
     def clear_monthly_chart_canvas(self):
         """Aylık grafik tuvallerini temizler."""
@@ -1306,7 +1340,7 @@ class MonthlyGraphsPage(QWidget):
             if widget:
                 widget.deleteLater()
 
-    def _start_monthly_graph_worker(self):
+    def _start_monthly_graph_worker(self, graph_mode: str):
         """Aylık grafik çalışanını başlatır."""
         self.clear_monthly_chart_canvas()
         self.btn_save_monthly_chart.setEnabled(False)
@@ -1314,8 +1348,9 @@ class MonthlyGraphsPage(QWidget):
         self.current_page_monthly = 0
         self.monthly_progress.setValue(0)
         self.monthly_progress.show()
-        self.update_monthly_page_label()
-        self.update_monthly_navigation_buttons()
+        self.current_graph_mode = graph_mode  # Update current mode
+        self.update_monthly_page_label(graph_mode=self.current_graph_mode)
+        self.update_monthly_navigation_buttons(graph_mode=self.current_graph_mode)
 
         if self.monthly_worker and self.monthly_worker.isRunning():
             self.monthly_worker.quit()
@@ -1336,13 +1371,12 @@ class MonthlyGraphsPage(QWidget):
             return
 
         self.monthly_worker = MonthlyGraphWorker(
-            df=self.main_window.df,
-            grouping_col_name=self.main_window.grouping_col_name,
-            grouped_col_name=self.main_window.grouped_col_name,
-            oee_col_name=self.main_window.oee_col_name,
+            excel_path=self.main_window.excel_path,
+            current_df=self.main_window.df,
+            graph_mode=self.current_graph_mode,  # Use the updated mode
+            graph_type=self.cmb_monthly_graph_type.currentText(),
             prev_year_oee=prev_year_oee,
             prev_month_oee=prev_month_oee,
-            graph_type=self.cmb_monthly_graph_type.currentText(),
             main_window=self.main_window
         )
         self.monthly_worker.finished.connect(self._on_monthly_graphs_generated)
@@ -1352,7 +1386,6 @@ class MonthlyGraphsPage(QWidget):
 
     def _on_monthly_graphs_generated(self,
                                      figures_data_raw: List[Tuple[str, Union[List[dict[str, Any]], Dict[str, Any]]]],
-                                     # Updated type hint
                                      prev_year_oee: float | None, prev_month_oee: float | None):
         """MonthlyGraphWorker'dan gelen sonuçları işler."""
         self.monthly_progress.setValue(100)
@@ -1393,11 +1426,11 @@ class MonthlyGraphsPage(QWidget):
             self.monthly_chart_layout.addWidget(no_data_label)
             self.current_monthly_chart_figure = None
             self.btn_save_monthly_chart.setEnabled(False)
-            self.update_monthly_page_label()
-            self.update_monthly_navigation_buttons()
+            self.update_monthly_page_label(graph_mode=self.current_graph_mode)
+            self.update_monthly_navigation_buttons(graph_mode=self.current_graph_mode)
             return
 
-        hat_name, data_container = self.figures_data_monthly[self.current_page_monthly]
+        name, data_container = self.figures_data_monthly[self.current_page_monthly]
 
         fig_width_inches = 17.0
         fig_height_inches = 8.0
@@ -1419,12 +1452,13 @@ class MonthlyGraphsPage(QWidget):
             grouped_oee['Tarih'] = pd.to_datetime(grouped_oee['Tarih'])
 
             dates = grouped_oee['Tarih']
-            oee_values = grouped_oee['OEE_Degeri']
+            oee_values = grouped_oee['OEE_Degeri_Processed'] if 'OEE_Degeri_Processed' in grouped_oee.columns else \
+            grouped_oee['OEE_Degeri']
 
             line_color = '#1f77b4'
 
             x_indices = np.arange(len(dates))
-            ax.plot(x_indices, oee_values, marker='o', markersize=8, color=line_color, linewidth=2, label=hat_name)
+            ax.plot(x_indices, oee_values, marker='o', markersize=8, color=line_color, linewidth=2, label=name)
             ax.plot(x_indices, oee_values, 'o', markersize=6, color='white', markeredgecolor=line_color,
                     markeredgewidth=1.5, zorder=5)
 
@@ -1494,7 +1528,12 @@ class MonthlyGraphsPage(QWidget):
             else:
                 month_name = datetime.date.today().strftime('%B').capitalize()
 
-            chart_title = f"{hat_name} {month_name} OEE"
+            # Grafik başlığı dinamik olarak ayarlandı
+            if self.current_graph_mode == "page":
+                chart_title = f"{month_name} {name} OEE"  # name burada sayfa adıdır
+            else:  # hat mode
+                chart_title = f"{name} {month_name} OEE"  # name burada hat adıdır
+
             ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
 
             ax.legend(loc='upper left', bbox_to_anchor=(1.02, 0), fontsize=10)
@@ -1642,10 +1681,6 @@ class MonthlyGraphsPage(QWidget):
             ax.spines['top'].set_visible(False)
             ax2.spines['top'].set_visible(False)
 
-            # Legend tamamen kaldırıldı
-            # lines, labels = ax.get_legend_handles_labels()
-            # lines2, labels2 = ax2.get_legend_handles_labels()
-            # ax2.legend(lines + lines2, labels + labels2, loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
             fig.subplots_adjust(right=0.75)
 
             fig.tight_layout()
@@ -1657,19 +1692,25 @@ class MonthlyGraphsPage(QWidget):
 
         self.current_monthly_chart_figure = fig
         self.btn_save_monthly_chart.setEnabled(True)
-        self.update_monthly_page_label()
-        self.update_monthly_navigation_buttons()
+        self.update_monthly_page_label(graph_mode=self.current_graph_mode)
+        self.update_monthly_navigation_buttons(graph_mode=self.current_graph_mode)
 
-    def update_monthly_page_label(self) -> None:
+    def update_monthly_page_label(self, graph_mode: str) -> None:
         """Aylık grafik sayfa etiketini günceller."""
         total_pages = len(self.figures_data_monthly)
         self.lbl_monthly_page.setText(f"Sayfa {self.current_page_monthly + 1} / {total_pages}")
 
-    def update_monthly_navigation_buttons(self) -> None:
+    def update_monthly_navigation_buttons(self, graph_mode: str) -> None:
         """Aylık grafik gezinme düğmelerinin etkin durumunu günceller."""
         total_pages = len(self.figures_data_monthly)
         self.btn_prev_monthly.setEnabled(self.current_page_monthly > 0)
         self.btn_next_monthly.setEnabled(self.current_page_monthly < total_pages - 1)
+        if graph_mode == "hat":
+            self.btn_prev_monthly.setText("← Önceki Hat")
+            self.btn_next_monthly.setText("Sonraki Hat →")
+        elif graph_mode == "page":
+            self.btn_prev_monthly.setText("← Önceki Sayfa")
+            self.btn_next_monthly.setText("Sonraki Sayfa →")
 
     def prev_monthly_page(self) -> None:
         """Önceki aylık grafik sayfasına gider."""
@@ -1690,13 +1731,13 @@ class MonthlyGraphsPage(QWidget):
             QMessageBox.warning(self, "Kaydedilecek Grafik Yok", "Görüntülenecek bir aylık grafik bulunmamaktadır.")
             return
 
-        current_hat_name = "grafik"
+        current_name = "grafik"
         if self.figures_data_monthly and 0 <= self.current_page_monthly < len(self.figures_data_monthly):
-            current_hat_name = self.figures_data_monthly[self.current_page_monthly][0].replace(" ", "_").replace("/",
-                                                                                                                 "-")
+            current_name = self.figures_data_monthly[self.current_page_monthly][0].replace(" ", "_").replace("/",
+                                                                                                             "-")
 
         graph_type_name = self.cmb_monthly_graph_type.currentText().replace(" ", "_").replace("/", "-")
-        default_filename = f"{graph_type_name}_{current_hat_name}.png"
+        default_filename = f"{graph_type_name}_{current_name}.png"
 
         filepath, _ = QFileDialog.getSaveFileName(
             self, "Aylık Grafiği Kaydet", default_filename, "PNG (*.png);;JPEG (*.jpeg);;JPG (*.jpg)"
@@ -1885,6 +1926,7 @@ class MainWindow(QMainWindow):
             logging.warning("load_excel: Excel yolu veya seçilen sayfa boş. Veri yüklenemiyor.")
             return
 
+        # Eğer aynı dosya ve sayfa zaten yüklüyse tekrar yükleme
         if not self.df.empty and self.df.attrs.get('excel_path') == self.excel_path and \
                 self.df.attrs.get('selected_sheet') == self.selected_sheet:
             logging.info(f"'{self.selected_sheet}' sayfasındaki veriler zaten yüklü. Yeniden yüklenmiyor.")
@@ -1899,23 +1941,31 @@ class MainWindow(QMainWindow):
 
             logging.info("Veri '%s' sayfasından yüklendi. Satır sayısı: %d", self.selected_sheet, len(self.df))
 
+            # Sütun isimlerini dinamik olarak al
+            # A sütunu gruplama (tarih), B sütunu gruplanan (ürün)
             self.grouping_col_name = self.df.columns[excel_col_to_index('A')]
             self.grouped_col_name = self.df.columns[excel_col_to_index('B')]
             self.oee_col_name = None
             self.metric_cols = []
 
+            # Seçilen sayfaya göre OEE ve metrik sütunlarını belirle
             if self.selected_sheet == "SMD-OEE":
                 self.oee_col_name = self.df.columns[excel_col_to_index('BP')] if excel_col_to_index('BP') < len(
                     self.df.columns) else None
                 start_col_index = excel_col_to_index('H')
                 end_col_index = excel_col_to_index('BD')
+                # AP sütunu metriklerden hariç tutulacak
                 ap_col_index = excel_col_to_index('AP')
                 for i in range(start_col_index, end_col_index + 1):
-                    if i < len(self.df.columns):
+                    if i < len(self.df.columns) and i != ap_col_index:
                         self.metric_cols.append(self.df.columns[i])
             elif self.selected_sheet == "ROBOT":
+                # ROBOT sayfası için OEE sütunu BG olarak belirtildi, ancak mevcut kodda kullanılmıyor.
+                # Eğer ROBOT sayfası için de OEE grafiği çizilecekse bu kısım güncellenmeli.
+                # Günlük grafiklerde OEE sütunu kullanılmadığı için burada sadece metrikler tanımlanır.
                 start_col_index = excel_col_to_index('H')
                 end_col_index = excel_col_to_index('AU')
+                # AO sütunu metriklerden hariç tutulacak
                 ao_col_index = excel_col_to_index('AO')
 
                 for i in range(start_col_index, end_col_index + 1):
@@ -1926,10 +1976,17 @@ class MainWindow(QMainWindow):
                     self.df.columns) else None
                 start_col_index = excel_col_to_index('H')
                 end_col_index = excel_col_to_index('BD')
+                # AP sütunu metriklerden hariç tutulacak
                 ap_col_index = excel_col_to_index('AP')
                 for i in range(start_col_index, end_col_index + 1):
                     if i < len(self.df.columns) and i != ap_col_index:
                         self.metric_cols.append(self.df.columns[i])
+            elif self.selected_sheet == "KAPLAMA-OEE":
+                self.oee_col_name = self.df.columns[excel_col_to_index('BG')] if excel_col_to_index('BG') < len(
+                    self.df.columns) else None
+                # KAPLAMA-OEE için özel metrik sütunları tanımlanmadıysa, boş bırakılır veya varsayılan atanır.
+                # Bu sayfa için sadece OEE grafiği istendiği için metrikler boş kalabilir.
+                self.metric_cols = []
 
             logging.info("Gruplama sütunu tanımlandı: %s", self.grouping_col_name)
             logging.info("Gruplanan sütun tanımlandı: %s", self.grouped_col_name)
