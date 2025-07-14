@@ -39,12 +39,12 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5 import QtGui
 
-# Number of graphs to show per page for daily graphs
+# Her sayfada kaç grafik gösterileceği
 GRAPHS_PER_PAGE = 1
-# Required Excel sheet names
+# Gerekli Excel sayfa isimleri
 REQ_SHEETS = {"SMD-OEE", "ROBOT", "DALGA_LEHİM"}
 
-# Logging settings
+# Loglama ayarları
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -80,17 +80,17 @@ plt.rcParams['axes.linewidth'] = 1.5
 
 
 def excel_col_to_index(col_letter: str) -> int:
-    """Converts an Excel column letter to a zero-based index."""
+    """Excel sütun harfini sıfır tabanlı indekse dönüştürür."""
     index = 0
     for char in col_letter.upper():
         if not char.isalpha():
-            raise ValueError(f"Invalid column letter: {col_letter}")
+            raise ValueError(f"Geçersiz sütun harfi: {col_letter}")
         index = index * 26 + (ord(char) - ord('A') + 1)
     return index - 1
 
 
 def seconds_from_timedelta(series: pd.Series) -> pd.Series:
-    """Converts time values in a Pandas Series to seconds."""
+    """Pandas Serisindeki zaman değerlerini saniyeye dönüştürür."""
     seconds_series = pd.Series(0.0, index=series.index, dtype=float)
 
     is_time_obj = series.apply(lambda x: isinstance(x, datetime.time))
@@ -121,7 +121,7 @@ def seconds_from_timedelta(series: pd.Series) -> pd.Series:
 
 
 class GraphWorker(QThread):
-    """Worker class for daily graph generation in the background."""
+    """Arka planda günlük grafik oluşturma için çalışan sınıf."""
     finished = pyqtSignal(list)
     progress = pyqtSignal(int)
     error = pyqtSignal(str)
@@ -147,7 +147,7 @@ class GraphWorker(QThread):
         self.selected_grouping_val = selected_grouping_val
 
     def run(self) -> None:
-        """Method to run when the thread starts."""
+        """İş parçacığı başladığında çalışacak metod."""
         try:
             results: List[Tuple[str, pd.Series, str]] = []
             total = len(self.grouped_values)
@@ -183,7 +183,7 @@ class GraphWorker(QThread):
                             elif isinstance(oee_value_raw, (int, float)):
                                 oee_value_float = float(oee_value_raw)
                             else:
-                                raise ValueError("Unsupported OEE value type or format")
+                                raise ValueError("Desteklenmeyen OEE değeri tipi veya formatı")
 
                             if 0.0 <= oee_value_float <= 1.0 and oee_value_float != 0:
                                 oee_display_value = f"{oee_value_float * 100:.0f}%"
@@ -193,7 +193,7 @@ class GraphWorker(QThread):
                                 oee_display_value = "0%"
                         except (ValueError, TypeError):
                             logging.warning(
-                                f"OEE value could not be converted: {oee_value_raw}. Default '0%' will be used.")
+                                f"OEE değeri dönüştürülemedi: {oee_value_raw}. Varsayılan '0%' kullanılacak.")
                             oee_display_value = "0%"
 
                 if not sums.empty:
@@ -202,12 +202,12 @@ class GraphWorker(QThread):
 
             self.finished.emit(results)
         except Exception as exc:
-            logging.exception("GraphWorker error occurred.")
-            self.error.emit(f"An error occurred while creating the graph: {str(exc)}")
+            logging.exception("GraphWorker hatası oluştu.")
+            self.error.emit(f"Grafik oluşturulurken bir hata oluştu: {str(exc)}")
 
 
 class GraphPlotter:
-    """Helper class for creating Matplotlib graphs."""
+    """Matplotlib grafikleri oluşturmak için yardımcı sınıf."""
 
     @staticmethod
     def create_donut_chart(
@@ -217,7 +217,7 @@ class GraphPlotter:
             chart_colors: List[Any],
             fig: plt.Figure
     ) -> None:
-        """Creates a donut chart."""
+        """Donut grafik oluşturur."""
         wedges, texts = ax.pie(
             sorted_metrics_series,
             autopct=None,
@@ -275,7 +275,7 @@ class GraphPlotter:
             oee_display_value: str,
             chart_colors: List[Any]
     ) -> None:
-        """Creates a bar chart."""
+        """Çubuk grafik oluşturur."""
         metrics = sorted_metrics_series.index.tolist()
         values = sorted_metrics_series.values.tolist()
 
@@ -319,7 +319,7 @@ class GraphPlotter:
 
 
 class FileSelectionPage(QWidget):
-    """Represents the file selection page."""
+    """Dosya seçim sayfasını temsil eder."""
 
     def __init__(self, main_window: "MainWindow") -> None:
         super().__init__()
@@ -360,7 +360,7 @@ class FileSelectionPage(QWidget):
         layout.addStretch(1)
 
     def browse(self) -> None:
-        """Allows the user to select an Excel file."""
+        """Kullanıcının bir Excel dosyası seçmesine izin verir."""
         path, _ = QFileDialog.getOpenFileName(self, "Excel seç", str(Path.home()), "Excel Files (*.xlsx)")
         if not path:
             return
@@ -397,11 +397,11 @@ class FileSelectionPage(QWidget):
             self.reset_page()
 
     def go_to_daily_graphs(self) -> None:
-        """Navigates to the daily graphs page."""
+        """Günlük grafikler sayfasına gider."""
         self.main_window.goto_page(1)
 
     def go_to_monthly_graphs(self) -> None:
-        """Navigates to the monthly graphs page."""
+        """Aylık grafikler sayfasına gider."""
         if "SMD-OEE" not in self.main_window.available_sheets:
             QMessageBox.warning(self, "Uyarı", "Aylık grafikler için 'SMD-OEE' sayfası Excel dosyasında bulunmalıdır.")
             return
@@ -412,7 +412,7 @@ class FileSelectionPage(QWidget):
         self.main_window.goto_page(3)
 
     def reset_page(self):
-        """Resets the page to its initial state."""
+        """Sayfayı başlangıç durumuna sıfırlar."""
         self.main_window.excel_path = None
         self.main_window.selected_sheet = None
         self.main_window.available_sheets = []
@@ -422,7 +422,7 @@ class FileSelectionPage(QWidget):
 
 
 class DataSelectionPage(QWidget):
-    """Represents the data selection page (grouping, metrics, etc. - for Daily Graphs)."""
+    """Veri seçim sayfasını (gruplama, metrikler vb. - Günlük Grafikler için) temsil eder."""
 
     def __init__(self, main_window: "MainWindow") -> None:
         super().__init__()
@@ -487,7 +487,7 @@ class DataSelectionPage(QWidget):
         main_layout.addLayout(nav_layout)
 
     def refresh(self) -> None:
-        """Refreshes data when the page is displayed."""
+        """Sayfa görüntülendiğinde verileri yeniler."""
         self.cmb_sheet.clear()
         if self.main_window.available_sheets:
             self.cmb_sheet.addItems(self.main_window.available_sheets)
@@ -504,13 +504,13 @@ class DataSelectionPage(QWidget):
             return
 
     def on_sheet_selected(self) -> None:
-        """Updates the selected sheet in the main window and reloads data when sheet selection changes."""
+        """Sayfa seçimi değiştiğinde ana penceredeki seçili sayfayı günceller ve verileri yeniden yükler."""
         self.main_window.selected_sheet = self.cmb_sheet.currentText()
         self.main_window.load_excel()
         self._populate_data_selection_fields()
 
     def _populate_data_selection_fields(self):
-        """Populates grouping, grouped, and metric fields."""
+        """Gruplama, gruplanan ve metrik alanlarını doldurur."""
         df = self.main_window.df
         if df.empty:
             QMessageBox.critical(self, "Hata", "Veri yüklenemedi. Lütfen dosyayı kontrol edin.")
@@ -537,7 +537,7 @@ class DataSelectionPage(QWidget):
         self.populate_grouped()
 
     def populate_grouped(self) -> None:
-        """Populates the list of grouped variables (products)."""
+        """Gruplanan değişkenler (ürünler) listesini doldurur."""
         self.lst_grouped.clear()
         selected_grouping_val = self.cmb_grouping.currentText()
         df = self.main_window.df
@@ -555,7 +555,7 @@ class DataSelectionPage(QWidget):
         self.update_next_button_state()
 
     def populate_metrics_checkboxes(self):
-        """Creates and populates checkboxes for metric columns."""
+        """Metrik sütunları için onay kutuları oluşturur ve doldurur."""
         self.clear_metrics_checkboxes()
 
         self.main_window.selected_metrics = []
@@ -587,7 +587,7 @@ class DataSelectionPage(QWidget):
         self.update_next_button_state()
 
     def clear_metrics_checkboxes(self):
-        """Clears metric checkboxes."""
+        """Metrik onay kutularını temizler."""
         while self.metrics_layout.count():
             item = self.metrics_layout.takeAt(0)
             widget = item.widget()
@@ -597,7 +597,7 @@ class DataSelectionPage(QWidget):
                 self.metrics_layout.removeItem(item)
 
     def on_metric_checkbox_changed(self, state):
-        """Called when the state of a metric checkbox changes."""
+        """Bir metrik onay kutusunun durumu değiştiğinde çağrılır."""
         sender_checkbox = self.sender()
         metric_name = sender_checkbox.text().replace(" (Boş)", "")
 
@@ -611,13 +611,13 @@ class DataSelectionPage(QWidget):
         self.update_next_button_state()
 
     def update_next_button_state(self):
-        """Updates the enabled state of the next button."""
+        """İleri düğmesinin etkin durumunu günceller."""
         is_grouped_selected = bool(self.lst_grouped.selectedItems())
         is_metric_selected = bool(self.main_window.selected_metrics)
         self.btn_next.setEnabled(is_grouped_selected and is_metric_selected)
 
     def go_next(self) -> None:
-        """Prepares data to navigate to the next page."""
+        """Bir sonraki sayfaya gitmek için verileri hazırlar."""
         self.main_window.grouped_values = [i.text() for i in self.lst_grouped.selectedItems()]
         self.main_window.selected_grouping_val = self.cmb_grouping.currentText()
         if not self.main_window.grouped_values or not self.main_window.selected_metrics:
@@ -627,7 +627,7 @@ class DataSelectionPage(QWidget):
 
 
 class DailyGraphsPage(QWidget):
-    """Page that displays generated daily graphs and provides saving options."""
+    """Oluşturulan günlük grafikleri görüntüleyen ve kaydetme seçenekleri sunan sayfa."""
 
     def __init__(self, main_window: "MainWindow") -> None:
         super().__init__()
@@ -708,12 +708,12 @@ class DailyGraphsPage(QWidget):
         main_layout.addLayout(nav_bottom)
 
     def on_graph_type_changed(self, index: int) -> None:
-        """Called when the graph type changes and redraws the graphs."""
+        """Grafik türü değiştiğinde çağrılır ve grafikleri yeniden çizer."""
         self.current_graph_type = self.cmb_graph_type.currentText()
         self.enter_page()
 
     def on_results(self, results: List[Tuple[str, pd.Series, str]]) -> None:
-        """Processes results from GraphWorker and creates graphs."""
+        """GraphWorker'dan gelen sonuçları işler ve grafikler oluşturur."""
         self.progress.setValue(100)
         self.progress.hide()
 
@@ -764,7 +764,7 @@ class DailyGraphsPage(QWidget):
             self.btn_save_image.setEnabled(True)
 
     def enter_page(self) -> None:
-        """Initiates the graph recreation process when entering this page."""
+        """Bu sayfaya girildiğinde grafik yeniden oluşturma sürecini başlatır."""
         self.figures_data.clear()
         self.clear_canvases()
         self.progress.setValue(0)
@@ -793,7 +793,7 @@ class DailyGraphsPage(QWidget):
         self.worker.start()
 
     def on_error(self, message: str) -> None:
-        """Displays an error message from GraphWorker."""
+        """GraphWorker'dan gelen bir hata mesajını görüntüler."""
         QMessageBox.critical(self, "Hata", message)
         self.progress.setValue(0)
         self.progress.hide()
@@ -801,7 +801,7 @@ class DailyGraphsPage(QWidget):
         self.btn_save_image.setEnabled(False)
 
     def clear_canvases(self) -> None:
-        """Clears existing graph canvases."""
+        """Mevcut grafik tuvalini temizler."""
         while self.vbox_canvases.count():
             item = self.vbox_canvases.takeAt(0)
             widget = item.widget()
@@ -809,7 +809,7 @@ class DailyGraphsPage(QWidget):
                 widget.deleteLater()
 
     def display_current_page_graphs(self) -> None:
-        """Displays graphs on the current page."""
+        """Mevcut sayfadaki grafikleri görüntüler."""
         self.clear_canvases()
 
         total_pages = (len(self.figures_data) + GRAPHS_PER_PAGE - 1) // GRAPHS_PER_PAGE if self.figures_data else 0
@@ -843,31 +843,31 @@ class DailyGraphsPage(QWidget):
         self.btn_save_image.setEnabled(True)
 
     def update_page_label(self) -> None:
-        """Updates the page label."""
+        """Sayfa etiketini günceller."""
         total_pages = (len(self.figures_data) + GRAPHS_PER_PAGE - 1) // GRAPHS_PER_PAGE if self.figures_data else 0
         self.lbl_page.setText(f"Sayfa {self.current_page + 1} / {total_pages}")
 
     def update_navigation_buttons(self) -> None:
-        """Updates the enabled state of navigation buttons."""
+        """Gezinme düğmelerinin etkin durumunu günceller."""
         total_pages = (len(self.figures_data) + GRAPHS_PER_PAGE - 1) // GRAPHS_PER_PAGE if self.figures_data else 0
         self.btn_prev.setEnabled(self.current_page > 0)
         self.btn_next.setEnabled(self.current_page < total_pages - 1)
 
     def prev_page(self) -> None:
-        """Navigates to the previous page."""
+        """Önceki sayfaya gider."""
         if self.current_page > 0:
             self.current_page -= 1
             self.display_current_page_graphs()
 
     def next_page(self) -> None:
-        """Navigates to the next page."""
+        """Sonraki sayfaya gider."""
         total_pages = (len(self.figures_data) + GRAPHS_PER_PAGE - 1) // GRAPHS_PER_PAGE if self.figures_data else 0
         if self.current_page < total_pages - 1:
             self.current_page += 1
             self.display_current_page_graphs()
 
     def save_single_graph_as_image(self) -> None:
-        """Saves the graph on the current page as PNG/JPEG."""
+        """Mevcut sayfadaki grafiği PNG/JPEG olarak kaydeder."""
         if not self.figures_data:
             QMessageBox.warning(self, "Kaydedilecek Grafik Yok", "Görüntülenecek bir grafik bulunmamaktadır.")
             return
@@ -899,7 +899,7 @@ class DailyGraphsPage(QWidget):
 
 
 class MonthlyGraphWorker(QThread):
-    """Worker class for monthly graph generation in the background."""
+    """Aylık grafik oluşturma için arka planda çalışan sınıf."""
     finished = pyqtSignal(list, object, object)
     progress = pyqtSignal(int)
     error = pyqtSignal(str)
@@ -917,14 +917,14 @@ class MonthlyGraphWorker(QThread):
         self.main_window = main_window
 
     def run(self):
-        """Method to run when the thread starts."""
+        """İş parçacığı başladığında çalışacak metod."""
         try:
             figures_data: List[Tuple[str, List[dict[str, Any]]]] = []
 
             df_smd_oee = self.df
-            logging.info(f"MonthlyGraphWorker: Initial dataframe size: {df_smd_oee.shape}")
+            logging.info(f"MonthlyGraphWorker: Başlangıç veri çerçevesi boyutu: {df_smd_oee.shape}")
 
-            # Rename columns for internal consistency
+            # Sütunları dahili tutarlılık için yeniden adlandır
             col_mapping = {}
             if self.grouped_col_name in df_smd_oee.columns:
                 col_mapping[self.grouped_col_name] = 'U_Agaci_Sev'
@@ -935,26 +935,26 @@ class MonthlyGraphWorker(QThread):
 
             if col_mapping:
                 df_smd_oee.rename(columns=col_mapping, inplace=True)
-                logging.info(f"MonthlyGraphWorker: Columns renamed: {col_mapping}")
+                logging.info(f"MonthlyGraphWorker: Sütunlar yeniden adlandırıldı: {col_mapping}")
             else:
-                self.error.emit("Required columns (Product, Date, OEE) not found or could not be named in Excel file.")
+                self.error.emit("Gerekli sütunlar (Ürün, Tarih, OEE) Excel dosyasında bulunamadı veya adlandırılamadı.")
                 return
 
-            # Convert 'Tarih' column to datetime and clean invalid dates
+            # 'Tarih' sütununu datetime'a dönüştür ve geçersiz tarihleri temizle
             if 'Tarih' in df_smd_oee.columns:
                 df_smd_oee['Tarih'] = pd.to_datetime(df_smd_oee['Tarih'], errors='coerce')
                 df_smd_oee.dropna(subset=['Tarih'], inplace=True)
                 logging.info(
-                    f"MonthlyGraphWorker: 'Tarih' column converted to datetime and NaT values cleaned. New size: {df_smd_oee.shape}")
+                    f"MonthlyGraphWorker: 'Tarih' sütunu datetime'a dönüştürüldü ve NaT değerleri temizlendi. Yeni boyut: {df_smd_oee.shape}")
             else:
-                self.error.emit("'Tarih' column not found.")
+                self.error.emit("'Tarih' sütunu bulunamadı.")
                 return
 
-            # Convert 'OEE_Degeri' column to float (only for OEE graphs)
+            # 'OEE_Degeri' sütununu float'a dönüştür (sadece OEE grafikleri için)
             if self.graph_type == "OEE Grafikleri":
                 if 'OEE_Degeri' in df_smd_oee.columns:
                     logging.info(
-                        f"MonthlyGraphWorker: 'OEE_Degeri' column before conversion (first 5 values and types):\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
+                        f"MonthlyGraphWorker: Dönüşümden önceki 'OEE_Degeri' sütunu (ilk 5 değer ve tipleri):\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
 
                     df_smd_oee['OEE_Degeri'] = pd.to_numeric(
                         df_smd_oee['OEE_Degeri'].astype(str).replace('%', '').replace(',', '.'),
@@ -964,22 +964,22 @@ class MonthlyGraphWorker(QThread):
 
                     if not df_smd_oee['OEE_Degeri'].empty and df_smd_oee['OEE_Degeri'].max() > 1.0:
                         df_smd_oee['OEE_Degeri'] = df_smd_oee['OEE_Degeri'] / 100.0
-                        logging.info("MonthlyGraphWorker: OEE_Degeri column scaled to 0-1 range (divided by 100).")
+                        logging.info("MonthlyGraphWorker: OEE_Degeri sütunu 0-1 aralığına ölçeklendi (100'e bölündü).")
 
                     logging.info(
-                        f"MonthlyGraphWorker: 'OEE_Degeri' column after conversion and NaN fill (first 5 values and types):\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
+                        f"MonthlyGraphWorker: Dönüşüm ve NaN doldurmadan sonraki 'OEE_Degeri' sütunu (ilk 5 değer ve tipleri):\n{df_smd_oee['OEE_Degeri'].head().apply(lambda x: f'{x} ({type(x).__name__})')}")
                     logging.info(
-                        f"MonthlyGraphWorker: 'OEE_Degeri' column converted to float and invalid/empty values filled with 0.0. New size: {df_smd_oee.shape}")
+                        f"MonthlyGraphWorker: 'OEE_Degeri' sütunu float'a dönüştürüldü ve geçersiz/boş değerler 0.0 ile dolduruldu. Yeni boyut: {df_smd_oee.shape}")
                 else:
-                    self.error.emit("'OEE_Degeri' column not found.")
+                    self.error.emit("'OEE_Degeri' sütunu bulunamadı.")
                     return
 
-            # Get 19th index (column T) for Dizgi Onay Dağılım Grafiği
+            # Dizgi Onay Dağılım Grafiği için 19. indeksi (T sütunu) al
             dizgi_onay_col_index = excel_col_to_index('T')
             dizgi_onay_col_name = self.df.columns[dizgi_onay_col_index] if dizgi_onay_col_index < len(
                 self.df.columns) else None
 
-            # Get metric columns for Dizgi Duruş Grafiği
+            # Dizgi Duruş Grafiği için metrik sütunlarını al
             dizgi_durusu_metric_cols = []
             if self.main_window.selected_sheet == "SMD-OEE":
                 start_col_index = excel_col_to_index('H')
@@ -991,20 +991,20 @@ class MonthlyGraphWorker(QThread):
 
             if self.graph_type == "Dizgi Onay Dağılım Grafiği":
                 if not dizgi_onay_col_name or dizgi_onay_col_name not in df_smd_oee.columns:
-                    self.error.emit(f"'{dizgi_onay_col_name}' (Dizgi Onay) column not found or invalid.")
+                    self.error.emit(f"'{dizgi_onay_col_name}' (Dizgi Onay) sütunu bulunamadı veya geçersiz.")
                     return
                 df_smd_oee[dizgi_onay_col_name] = seconds_from_timedelta(df_smd_oee[dizgi_onay_col_name])
-                logging.info(f"MonthlyGraphWorker: '{dizgi_onay_col_name}' column converted to seconds.")
+                logging.info(f"MonthlyGraphWorker: '{dizgi_onay_col_name}' sütunu saniyeye dönüştürüldü.")
             elif self.graph_type == "Dizgi Duruş Grafiği":
                 if not dizgi_durusu_metric_cols:
-                    self.error.emit("Metric columns for Dizgi Duruş Graph not found.")
+                    self.error.emit("Dizgi Duruş Grafiği için metrik sütunları bulunamadı.")
                     return
                 for col in dizgi_durusu_metric_cols:
                     if col in df_smd_oee.columns:
                         df_smd_oee[col] = seconds_from_timedelta(df_smd_oee[col])
-                logging.info(f"MonthlyGraphWorker: Dizgi Duruş metric columns converted to seconds.")
+                logging.info(f"MonthlyGraphWorker: Dizgi Duruş metrik sütunları saniyeye dönüştürüldü.")
 
-            # Extract 'Group_Key' (e.g., "HAT-4")
+            # 'Group_Key' (örn: "HAT-4") çıkar
             def extract_group_key(s):
                 s = str(s).upper()
                 match = re.search(r'HAT(\d+)', s)
@@ -1017,36 +1017,36 @@ class MonthlyGraphWorker(QThread):
                 df_smd_oee['Group_Key'] = df_smd_oee['U_Agaci_Sev'].apply(extract_group_key)
                 df_smd_oee.dropna(subset=['Group_Key'], inplace=True)
                 logging.info(
-                    f"MonthlyGraphWorker: Group_Key column created and empty values cleaned. New size: {df_smd_oee.shape}")
+                    f"MonthlyGraphWorker: Group_Key sütunu oluşturuldu ve boş değerler temizlendi. Yeni boyut: {df_smd_oee.shape}")
             else:
-                self.error.emit("'U_Agaci_Sev' column not found.")
+                self.error.emit("'U_Agaci_Sev' sütunu bulunamadı.")
                 return
 
             unique_hats = sorted(df_smd_oee['Group_Key'].unique())
 
-            # Filter for HAT-1, HAT-2, HAT-3, HAT-4 only
+            # Sadece HAT-1, HAT-2, HAT-3, HAT-4 için filtrele
             target_hat_patterns = {"HAT-1", "HAT-2", "HAT-3", "HAT-4"}
             filtered_hats = [hat for hat in unique_hats if hat in target_hat_patterns]
             unique_hats = sorted(filtered_hats)
-            logging.info(f"MonthlyGraphWorker: Target hats filtered: {unique_hats}")
+            logging.info(f"MonthlyGraphWorker: Hedef hatlar filtrelendi: {unique_hats}")
 
             total_hats = len(unique_hats)
 
             if not unique_hats and self.graph_type != "Dizgi Duruş Grafiği":
                 self.error.emit(
-                    "No hat data found for graph creation. Please ensure Excel file contains data for 'HAT-1', 'HAT-2', 'HAT-3', or 'HAT-4'.")
+                    "Grafik oluşturmak için hat verisi bulunamadı. Lütfen Excel dosyasının 'HAT-1', 'HAT-2', 'HAT-3' veya 'HAT-4' için veri içerdiğinden emin olun.")
                 return
 
             if self.graph_type == "Dizgi Duruş Grafiği":
-                # Get sum of all metric columns (without grouping by hat)
+                # Tüm metrik sütunlarının toplamını al (hatlara göre gruplamadan)
                 all_metrics_sum = df_smd_oee[dizgi_durusu_metric_cols].sum()
-                total_sum_of_all_metrics = all_metrics_sum.sum()  # This is the total sum of all metrics in seconds
+                total_sum_of_all_metrics = all_metrics_sum.sum()  # Bu, tüm metriklerin saniye cinsinden toplamıdır
 
                 metric_sums = all_metrics_sum[all_metrics_sum > 0].sort_values(ascending=False)
 
-                # Calculate cumulative sum and percentage
-                # The cumulative percentage for the line should be based on the *total sum of all metrics*,
-                # not just the sum of the currently plotted (pareto) metrics.
+                # Kümülatif toplamı ve yüzdeyi hesapla
+                # Çizgi için kümülatif yüzde, sadece çizilen (pareto) metriklerin toplamına değil,
+                # tüm metriklerin toplamına göre olmalıdır.
                 cumulative_sum_for_line = metric_sums.cumsum()
                 cumulative_percentage_for_line = (cumulative_sum_for_line / total_sum_of_all_metrics) * 100
 
@@ -1060,50 +1060,59 @@ class MonthlyGraphWorker(QThread):
                     logging.info(
                         f"  - {metric_name}: Süre: {duration_hours:02d}:{duration_minutes:02d}:{duration_seconds:02d}, Yüzde: {percentage:.1f}%")
 
-                # Select metrics around 80% (a bit below/above is acceptable)
-                pareto_metrics = metric_sums[cumulative_percentage_for_line <= 85]
-                if pareto_metrics.empty and not metric_sums.empty:
-                    pareto_metrics = metric_sums.head(1)
-                elif pareto_metrics.empty and metric_sums.empty:
-                    logging.warning(f"MonthlyGraphWorker: No metric data found for Dizgi Duruş Graph.")
-                    self.progress.emit(100)
-                    self.finished.emit([], self.prev_year_oee, self.prev_month_oee)
-                    return
+                # Sütun kıstası %80 kuralına göre ayarla
+                pareto_metrics_to_plot = pd.Series(dtype=float)
+                current_cumulative_percent = 0.0
+                for idx, (metric_name, value) in enumerate(metric_sums.items()):
+                    percent_of_total = (value / total_sum_of_all_metrics) * 100
+                    current_cumulative_percent += percent_of_total
+                    pareto_metrics_to_plot[metric_name] = value
+
+                    if current_cumulative_percent >= 80:
+                        # %80'i ilk geçtiği metrik
+                        if current_cumulative_percent - percent_of_total >= 80 and (
+                                current_cumulative_percent - 80) > 10:
+                            # Eğer %80'i 10'dan fazla geçtiyse, bir önceki metriğe kadar al
+                            pareto_metrics_to_plot = pareto_metrics_to_plot.iloc[:-1]
+                        break  # %80'i geçtikten sonra döngüyü sonlandır
+
+                if pareto_metrics_to_plot.empty and not metric_sums.empty:
+                    pareto_metrics_to_plot = metric_sums.head(1)  # En az bir metrik göster
 
                 # Pass both the pareto metrics and the total sum of all metrics, and the cumulative percentages for the line
                 figures_data.append(("Genel Dizgi Duruş", {
-                    "metrics": pareto_metrics.to_dict(),
+                    "metrics": pareto_metrics_to_plot.to_dict(),  # Sadece çizilecek metrikleri gönder
                     "total_overall_sum": total_sum_of_all_metrics,
-                    "cumulative_percentages": cumulative_percentage_for_line[pareto_metrics.index].to_dict()
-                    # Pass only for plotted metrics
+                    "cumulative_percentages": cumulative_percentage_for_line[pareto_metrics_to_plot.index].to_dict()
+                    # Sadece çizilecek metriklerin kümülatif yüzdelerini gönder
                 }))
-                logging.info(f"MonthlyGraphWorker: General Dizgi Duruş data prepared.")
+                logging.info(f"MonthlyGraphWorker: Genel Dizgi Duruş verisi hazırlandı.")
                 self.progress.emit(100)
 
             else:  # Existing hat-based loop for OEE Graphs and Dizgi Onay Dağılım Graph
                 for i, selected_hat in enumerate(unique_hats):
-                    logging.info(f"MonthlyGraphWorker: Creating graph for '{selected_hat}'...")
+                    logging.info(f"MonthlyGraphWorker: '{selected_hat}' için grafik oluşturuluyor...")
                     df_smd_oee_filtered_by_hat = df_smd_oee[df_smd_oee['Group_Key'] == selected_hat].copy()
 
                     if df_smd_oee_filtered_by_hat.empty:
                         logging.warning(
-                            f"MonthlyGraphWorker: No data found for selected '{selected_hat}' line, skipping.")
+                            f"MonthlyGraphWorker: Seçilen '{selected_hat}' hattı için veri bulunamadı, atlanıyor.")
                         self.progress.emit(int((i + 1) / total_hats * 100))
                         continue
 
                     if self.graph_type == "OEE Grafikleri":
-                        # Group by date and calculate OEE average
+                        # Tarihe göre grupla ve OEE ortalamasını hesapla
                         grouped_oee = df_smd_oee_filtered_by_hat.groupby(pd.Grouper(key='Tarih', freq='D'))[
                             'OEE_Degeri'].mean().reset_index()
                         grouped_oee.dropna(subset=['OEE_Degeri'], inplace=True)
                         figures_data.append((selected_hat, grouped_oee.to_dict('records')))
-                        logging.info(f"MonthlyGraphWorker: OEE data prepared for '{selected_hat}'.")
+                        logging.info(f"MonthlyGraphWorker: '{selected_hat}' için OEE verisi hazırlandı.")
 
                     elif self.graph_type == "Dizgi Onay Dağılım Grafiği":
-                        # Get total values for Dizgi Onay metric
+                        # Dizgi Onay metriği için toplam değerleri al
                         current_hat_onay_sum = df_smd_oee_filtered_by_hat[dizgi_onay_col_name].sum()
 
-                        # Calculate Dizgi Onay total for other hats
+                        # Diğer hatlar için Dizgi Onay toplamını hesapla
                         other_hats_df = df_smd_oee[df_smd_oee['Group_Key'] != selected_hat].copy()
                         other_hats_onay_sum = other_hats_df[dizgi_onay_col_name].sum()
 
@@ -1117,25 +1126,25 @@ class MonthlyGraphWorker(QThread):
                                 {"label": selected_hat, "value": current_hat_onay_sum},
                                 {"label": "DİĞER HATLAR", "value": other_hats_onay_sum}
                             ]))
-                            logging.info(f"MonthlyGraphWorker: Dizgi Onay data prepared for '{selected_hat}'.")
+                            logging.info(f"MonthlyGraphWorker: '{selected_hat}' için Dizgi Onay verisi hazırlandı.")
                         else:
                             logging.warning(
-                                f"MonthlyGraphWorker: Dizgi Onay data not found or total is zero for '{selected_hat}', skipping.")
+                                f"MonthlyGraphWorker: '{selected_hat}' için Dizgi Onay verisi bulunamadı veya toplam sıfır, atlanıyor.")
 
                     self.progress.emit(int((i + 1) / total_hats * 100))
                     logging.info(
-                        f"MonthlyGraphWorker: Data prepared for '{selected_hat}'. Progress: {int((i + 1) / total_hats * 100)}%")
+                        f"MonthlyGraphWorker: '{selected_hat}' için veri hazırlandı. İlerleme: {int((i + 1) / total_hats * 100)}%")
 
-            # Emit all data and OEE values via signal when finished
+            # Tüm verileri ve OEE değerlerini sinyal aracılığıyla gönder
             self.finished.emit(figures_data, self.prev_year_oee, self.prev_month_oee)
-            logging.info("MonthlyGraphWorker: All monthly graph data successfully prepared.")
+            logging.info("MonthlyGraphWorker: Tüm aylık grafik verileri başarıyla hazırlandı.")
         except Exception as exc:
-            logging.exception("MonthlyGraphWorker error occurred.")
-            self.error.emit(f"An error occurred while creating monthly graph: {str(exc)}")
+            logging.exception("MonthlyGraphWorker hatası oluştu.")
+            self.error.emit(f"Aylık grafik oluşturulurken bir hata oluştu: {str(exc)}")
 
 
 class MonthlyGraphsPage(QWidget):
-    """Represents the monthly graphs and data selection page."""
+    """Aylık grafikler ve veri seçim sayfasını temsil eder."""
 
     def __init__(self, main_window: "MainWindow") -> None:
         super().__init__()
@@ -1250,7 +1259,7 @@ class MonthlyGraphsPage(QWidget):
         self.on_monthly_graph_type_changed(0)
 
     def enter_page(self) -> None:
-        """Clears the graph and updates button states when entering this page."""
+        """Grafiği temizler ve bu sayfaya girildiğinde düğme durumlarını günceller."""
         self.clear_monthly_chart_canvas()
         self.btn_save_monthly_chart.setEnabled(False)
         self.update_monthly_page_label()
@@ -1261,7 +1270,7 @@ class MonthlyGraphsPage(QWidget):
             self.btn_line_chart.setEnabled(False)
 
     def on_monthly_graph_type_changed(self, index: int):
-        """Shows/hides relevant options when monthly graph type selection changes."""
+        """Aylık grafik türü seçimi değiştiğinde ilgili seçenekleri gösterir/gizler."""
         selected_type = self.cmb_monthly_graph_type.currentText()
         self.clear_monthly_chart_canvas()
         self.btn_save_monthly_chart.setEnabled(False)
@@ -1290,7 +1299,7 @@ class MonthlyGraphsPage(QWidget):
             self.btn_line_chart.setEnabled(False)
 
     def clear_monthly_chart_canvas(self):
-        """Clears monthly graph canvases."""
+        """Aylık grafik tuvallerini temizler."""
         while self.monthly_chart_layout.count():
             item = self.monthly_chart_layout.takeAt(0)
             widget = item.widget()
@@ -1298,7 +1307,7 @@ class MonthlyGraphsPage(QWidget):
                 widget.deleteLater()
 
     def _start_monthly_graph_worker(self):
-        """Starts the monthly graph worker."""
+        """Aylık grafik çalışanını başlatır."""
         self.clear_monthly_chart_canvas()
         self.btn_save_monthly_chart.setEnabled(False)
         self.figures_data_monthly.clear()
@@ -1345,7 +1354,7 @@ class MonthlyGraphsPage(QWidget):
                                      figures_data_raw: List[Tuple[str, Union[List[dict[str, Any]], Dict[str, Any]]]],
                                      # Updated type hint
                                      prev_year_oee: float | None, prev_month_oee: float | None):
-        """Processes results from MonthlyGraphWorker."""
+        """MonthlyGraphWorker'dan gelen sonuçları işler."""
         self.monthly_progress.setValue(100)
         self.monthly_progress.hide()
 
@@ -1362,14 +1371,14 @@ class MonthlyGraphsPage(QWidget):
         self.btn_save_monthly_chart.setEnabled(True)
 
     def _on_monthly_graph_error(self, message: str):
-        """Displays an error message from MonthlyGraphWorker."""
+        """MonthlyGraphWorker'dan gelen bir hata mesajını görüntüler."""
         QMessageBox.critical(self, "Hata", message)
         self.monthly_progress.setValue(0)
         self.monthly_progress.hide()
         self.btn_save_monthly_chart.setEnabled(False)
 
     def display_current_page_graphs_monthly(self) -> None:
-        """Displays the monthly graph on the current page."""
+        """Mevcut sayfadaki aylık grafiği görüntüler."""
         self.clear_monthly_chart_canvas()
 
         total_pages = len(self.figures_data_monthly)
@@ -1503,7 +1512,7 @@ class MonthlyGraphsPage(QWidget):
                 hours = absolute // 3600
                 minutes = (absolute % 3600) // 60
                 seconds = absolute % 60
-                return f"{hours:02d}:{minutes:02d}:{seconds:02d}; {pct:.0f}%"
+                return f"{hours:02d}:{minutes:02d}:{minutes:02d}; {pct:.0f}%"
 
             wedges, texts, autotexts = ax.pie(
                 values,
@@ -1543,20 +1552,34 @@ class MonthlyGraphsPage(QWidget):
             ax2 = ax.twinx()
 
             bar_color = '#1f77b4'
-            line_color = '#ff7f0e'
-            bars = ax.bar(metric_sums.index, metric_sums.values / 60, color=bar_color,
-                          alpha=0.8)
+            line_color = 'red'  # Kırmızı renk
 
-            ax2.plot(metric_sums.index, cumulative_percentage, color=line_color, marker='o', linestyle='-', linewidth=2,
-                     markersize=6)
+            # Sütunları çiz
+            bars = ax.bar(metric_sums.index, metric_sums.values / 60, color=bar_color, alpha=0.8)
 
-            # Remove horizontal grid lines
+            # Kümülatif yüzde çizgisini çiz (marker olmadan, daha düşük zorder)
+            ax2.plot(metric_sums.index, cumulative_percentage, color=line_color, linestyle='-', linewidth=2, zorder=1)
+            # Kümülatif yüzde noktalarını çiz (içi boş daireler, daha yüksek zorder)
+            ax2.plot(metric_sums.index, cumulative_percentage, 'o', markersize=8, markerfacecolor='none',
+                     markeredgecolor=line_color, markeredgewidth=2, zorder=2)
+
+            # %80 noktasında yatay kesikli kırmızı çizgi ekle
+            ax2.axhline(80, color='red', linestyle='--', linewidth=1.5)
+            # ax2.text(ax2.get_xlim()[1] * 1.01, 80, 'Hedef %80', color='red', va='center', ha='left', fontsize=9, fontweight='bold') # Bu satır kaldırıldı
+
+            # Yatay ızgara çizgilerini kaldır
             ax.grid(False)
             ax2.grid(False)
 
+            # "Duruş Nedenleri" başlığını kaldır
+            ax.set_xlabel("")
+
+            # Metrik isimlerini kalın fontta yaz
+            ax.set_xticklabels(metric_sums.index, fontsize=10, fontweight='bold', rotation=45, ha='right')
+
+            # Sütunların üzerindeki % ve süre değerleri
             for i, bar in enumerate(bars):
                 value_seconds = metric_sums.values[i]
-                # Calculate percentage relative to the total_overall_sum
                 percentage = (value_seconds / total_overall_sum) * 100 if total_overall_sum > 0 else 0
                 duration_hours = int(value_seconds // 3600)
                 duration_minutes = int((value_seconds % 3600) // 60)
@@ -1566,19 +1589,14 @@ class MonthlyGraphsPage(QWidget):
                 ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5, text_label,
                         ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
 
-            for i, percentage in enumerate(cumulative_percentage):
-                ax2.annotate(f'{percentage:.1f}%', (metric_sums.index[i], percentage), textcoords="offset points",
-                             xytext=(0, 10), ha='center', fontsize=8, color=line_color)
-
-            ax.set_xlabel("Duruş Nedenleri", fontsize=12, fontweight='bold')
             ax.set_ylabel("Süre (Dakika)", fontsize=12, fontweight='bold',
                           color=bar_color)
             ax2.set_ylabel("Kümülatif Yüzde (%)", fontsize=12, fontweight='bold', color=line_color)
 
             ax.tick_params(axis='x', rotation=45)
 
-            # Dynamic title for Pareto chart
-            chart_title = "Genel Dizgi Duruş Pareto Analizi"  # Default title
+            # Pareto grafiği için dinamik başlık
+            chart_title = "Genel Dizgi Duruş Pareto Analizi"  # Varsayılan başlık
 
             if not self.main_window.df.empty and 'Tarih' in self.main_window.df.columns:
                 df_dates = pd.to_datetime(self.main_window.df['Tarih'], errors='coerce').dropna()
@@ -1610,9 +1628,10 @@ class MonthlyGraphsPage(QWidget):
             ax.spines['top'].set_visible(False)
             ax2.spines['top'].set_visible(False)
 
-            lines, labels = ax.get_legend_handles_labels()
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax2.legend(lines + lines2, labels + labels2, loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
+            # Legend tamamen kaldırıldı
+            # lines, labels = ax.get_legend_handles_labels()
+            # lines2, labels2 = ax2.get_legend_handles_labels()
+            # ax2.legend(lines + lines2, labels + labels2, loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
             fig.subplots_adjust(right=0.75)
 
             fig.tight_layout()
@@ -1628,31 +1647,31 @@ class MonthlyGraphsPage(QWidget):
         self.update_monthly_navigation_buttons()
 
     def update_monthly_page_label(self) -> None:
-        """Updates the monthly graph page label."""
+        """Aylık grafik sayfa etiketini günceller."""
         total_pages = len(self.figures_data_monthly)
         self.lbl_monthly_page.setText(f"Sayfa {self.current_page_monthly + 1} / {total_pages}")
 
     def update_monthly_navigation_buttons(self) -> None:
-        """Updates the enabled state of monthly graph navigation buttons."""
+        """Aylık grafik gezinme düğmelerinin etkin durumunu günceller."""
         total_pages = len(self.figures_data_monthly)
         self.btn_prev_monthly.setEnabled(self.current_page_monthly > 0)
         self.btn_next_monthly.setEnabled(self.current_page_monthly < total_pages - 1)
 
     def prev_monthly_page(self) -> None:
-        """Navigates to the previous monthly graph page."""
+        """Önceki aylık grafik sayfasına gider."""
         if self.current_page_monthly > 0:
             self.current_page_monthly -= 1
             self.display_current_page_graphs_monthly()
 
     def next_monthly_page(self) -> None:
-        """Navigates to the next monthly graph page."""
+        """Sonraki aylık grafik sayfasına gider."""
         total_pages = len(self.figures_data_monthly)
         if self.current_page_monthly < total_pages - 1:
             self.current_page_monthly += 1
             self.display_current_page_graphs_monthly()
 
     def _save_monthly_chart_as_image(self):
-        """Saves the monthly graph as PNG/JPEG."""
+        """Aylık grafiği PNG/JPEG olarak kaydeder."""
         if self.current_monthly_chart_figure is None:
             QMessageBox.warning(self, "Kaydedilecek Grafik Yok", "Görüntülenecek bir aylık grafik bulunmamaktadır.")
             return
@@ -1681,7 +1700,7 @@ class MonthlyGraphsPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    """Represents the main application window."""
+    """Ana uygulama penceresini temsil eder."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -1716,7 +1735,7 @@ class MainWindow(QMainWindow):
         self.goto_page(0)
 
     def apply_stylesheet(self):
-        """Applies a modern stylesheet to the application."""
+        """Uygulamaya modern bir stil sayfası uygular."""
         self.setStyleSheet("""
             QWidget {
                 background-color: #f0f2f5;
@@ -1837,7 +1856,7 @@ class MainWindow(QMainWindow):
         """)
 
     def goto_page(self, index: int) -> None:
-        """Navigates to a specific page and refreshes it."""
+        """Belirli bir sayfaya gider ve onu yeniler."""
         self.stacked_widget.setCurrentIndex(index)
         if index == 1:
             self.data_selection_page.refresh()
@@ -1847,14 +1866,14 @@ class MainWindow(QMainWindow):
             self.monthly_graphs_page.enter_page()
 
     def load_excel(self) -> None:
-        """Loads the selected Excel file and sheet."""
+        """Seçilen Excel dosyasını ve sayfasını yükler."""
         if not self.excel_path or not self.selected_sheet:
-            logging.warning("load_excel: Excel path or selected sheet is empty. Data cannot be loaded.")
+            logging.warning("load_excel: Excel yolu veya seçilen sayfa boş. Veri yüklenemiyor.")
             return
 
         if not self.df.empty and self.df.attrs.get('excel_path') == self.excel_path and \
                 self.df.attrs.get('selected_sheet') == self.selected_sheet:
-            logging.info(f"Data from '{self.selected_sheet}' sheet is already loaded. Not reloading.")
+            logging.info(f"'{self.selected_sheet}' sayfasındaki veriler zaten yüklü. Yeniden yüklenmiyor.")
             return
 
         try:
@@ -1864,7 +1883,7 @@ class MainWindow(QMainWindow):
             self.df.attrs['excel_path'] = self.excel_path
             self.df.attrs['selected_sheet'] = self.selected_sheet
 
-            logging.info("Data loaded from '%s' sheet. Number of rows: %d", self.selected_sheet, len(self.df))
+            logging.info("Veri '%s' sayfasından yüklendi. Satır sayısı: %d", self.selected_sheet, len(self.df))
 
             self.grouping_col_name = self.df.columns[excel_col_to_index('A')]
             self.grouped_col_name = self.df.columns[excel_col_to_index('B')]
@@ -1898,14 +1917,14 @@ class MainWindow(QMainWindow):
                     if i < len(self.df.columns) and i != ap_col_index:
                         self.metric_cols.append(self.df.columns[i])
 
-            logging.info("Grouping column defined: %s", self.grouping_col_name)
-            logging.info("Grouped column defined: %s", self.grouped_col_name)
-            logging.info("OEE column defined: %s", self.oee_col_name)
-            logging.info("Metric columns defined: %s", self.metric_cols)
+            logging.info("Gruplama sütunu tanımlandı: %s", self.grouping_col_name)
+            logging.info("Gruplanan sütun tanımlandı: %s", self.grouped_col_name)
+            logging.info("OEE sütunu tanımlandı: %s", self.oee_col_name)
+            logging.info("Metrik sütunları tanımlandı: %s", self.metric_cols)
 
         except Exception as e:
             QMessageBox.critical(self, "Veri Yükleme Hatası", f"Veri yüklenirken bir hata oluştu: {e}")
-            logging.exception("Excel data loading error.")
+            logging.exception("Excel veri yükleme hatası.")
             self.df = pd.DataFrame()
 
 
@@ -1918,7 +1937,7 @@ if __name__ == "__main__":
         win.show()
         sys.exit(app.exec_())
     except Exception as e:
-        logging.exception("Critical error occurred while starting the application.")
+        logging.exception("Uygulama başlatılırken kritik bir hata oluştu.")
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
         msg.setText("Uygulama başlatılırken kritik bir hata oluştu.")
