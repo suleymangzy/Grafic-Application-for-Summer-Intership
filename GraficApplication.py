@@ -1393,8 +1393,21 @@ class MonthlyGraphsPage(QWidget):
             # Horizontal line for calculated average OEE
             if overall_calculated_average > 0:
                 y_val = overall_calculated_average
+                # Ay adını Türkçe ve büyük harfle al
+                month_names_turkish = {
+                    1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                    7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+                }
+                month_name = ""
+                if not dates.empty:
+                    first_date_in_data = dates.min()
+                    month_name = month_names_turkish.get(first_date_in_data.month,
+                                                         first_date_in_data.strftime('%B')).capitalize()
+                else:
+                    month_name = datetime.date.today().strftime('%B').capitalize()
+
                 ax.axhline(y_val, color='purple', linestyle='--', linewidth=1.5,
-                           label=f'Hesaplanan Ortalama OEE ({overall_calculated_average * 100:.1f}%)')
+                           label=f'{month_name} OEE ({overall_calculated_average * 100:.1f}%)')
                 # Yüzde değerini sağa, eksenin dışına yaz
                 ax.text(1.01, y_val, f'{overall_calculated_average * 100:.1f}%',
                         transform=ax.transAxes, color='purple', va='center', ha='left', fontsize=9, fontweight='bold')
@@ -1435,9 +1448,9 @@ class MonthlyGraphsPage(QWidget):
             ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
 
             # Legend'ı sağa, dikeyde ortaya yerleştir ve grafiğe alan aç
-            ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=10)
+            ax.legend(loc='upper left', bbox_to_anchor=(1.02, 0), fontsize=10)
             # Legend ve yeni eklenen yüzde etiketleri için yeterli boşluk bırak
-            fig.subplots_adjust(right=0.60)
+            fig.subplots_adjust(right=0.60) # Reverted right margin
 
         elif self.cmb_monthly_graph_type.currentText() == "Dizgi Onay Dağılım Grafiği":
             labels = [d["label"] for d in data_list]
