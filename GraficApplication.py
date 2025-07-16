@@ -1595,7 +1595,7 @@ class MonthlyGraphsPage(QWidget):
                 hours = absolute // 3600
                 minutes = (absolute % 3600) // 60
                 seconds = absolute % 60
-                return f"{hours:02d}:{minutes:02d}:{minutes:02d}; {pct:.0f}%"
+                return f"{hours:02d}:{minutes:02d}:{seconds:02d}; {pct:.0f}%"
 
             wedges, texts, autotexts = ax.pie(
                 values,
