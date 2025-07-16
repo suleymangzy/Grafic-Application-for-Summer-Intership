@@ -234,8 +234,9 @@ class GraphPlotter:
         oee_text_to_display = f"OEE\n{oee_display_value}" if oee_display_value else "OEE\nVeri Yok"
         ax.text(0, 0, oee_text_to_display,
                 horizontalalignment='center', verticalalignment='center',
-                fontsize=24, fontweight='bold', color='black')
+                fontsize=28, fontweight='bold', color='black')  # Font size increased
 
+        # Adjusted label_y_start to move labels further left
         label_y_start = 0.25 + (30 / (fig.get_size_inches()[1] * fig.dpi))
         label_line_height = 0.05
 
@@ -259,12 +260,13 @@ class GraphPlotter:
             luminance = (0.299 * r + 0.587 * g + 0.114 * b)
             text_color = 'white' if luminance < 0.5 else 'black'
 
-            fig.text(0.02,
+            # Adjusted x position for labels
+            fig.text(0.005,  # Moved further left
                      y_pos,
                      label_text,
                      horizontalalignment='left',
                      verticalalignment='top',
-                     fontsize=10,
+                     fontsize=12,  # Font size increased
                      bbox=bbox_props,
                      transform=fig.transFigure,
                      color=text_color
@@ -272,7 +274,8 @@ class GraphPlotter:
 
         ax.set_title("")
         ax.axis("equal")
-        fig.tight_layout(rect=[0.25, 0.1, 1, 0.95])
+        # Adjusted rect for more space on the left for labels
+        fig.tight_layout(rect=[0.2, 0.1, 1, 0.95])
 
     @staticmethod
     def create_bar_chart(
@@ -299,7 +302,7 @@ class GraphPlotter:
 
         # "Üretim Yapılmadı" durumunda başlığı ayarla
         oee_title_text = f"OEE: {oee_display_value}" if oee_display_value else "OEE: Veri Yok"
-        ax.set_title(oee_title_text, fontsize=16, fontweight='bold')
+        ax.set_title(oee_title_text, fontsize=24, fontweight='bold')  # Font size increased
 
         ax.grid(False)
 
@@ -443,86 +446,6 @@ class DataSelectionPage(QWidget):
         self.main_window = main_window
         self.init_ui()
 
-    def init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setAlignment(Qt.AlignTop)
-
-        title_label = QLabel("<h2>Günlük Grafik Veri Seçimi</h2>")
-        title_label.setObjectName("title_label")
-        title_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(title_label)
-
-        sheet_selection_group = QHBoxLayout()
-        self.sheet_selection_label = QLabel("İşlenecek Sayfa:")
-        self.sheet_selection_label.setAlignment(Qt.AlignLeft)
-        sheet_selection_group.addWidget(self.sheet_selection_label)
-
-        self.cmb_sheet = QComboBox()
-        self.cmb_sheet.setEnabled(False)
-        self.cmb_sheet.currentIndexChanged.connect(self.on_sheet_selected)
-        sheet_selection_group.addWidget(self.cmb_sheet)
-        main_layout.addLayout(sheet_selection_group)
-
-        grouping_group = QHBoxLayout()
-        grouping_group.addWidget(QLabel("<b>Gruplama Değişkeni (Tarihler):</b>"))
-        self.cmb_grouping = QComboBox()
-        self.cmb_grouping.currentIndexChanged.connect(self.populate_grouped)
-        grouping_group.addWidget(self.cmb_grouping)
-        main_layout.addLayout(grouping_group)
-
-        grouped_group = QHBoxLayout()
-        grouped_group.addWidget(QLabel("<b>Gruplanan Değişkenler (Ürünler):</b>"))
-        self.lst_grouped = QListWidget()
-        self.lst_grouped.setSelectionMode(QListWidget.MultiSelection)
-        self.lst_grouped.itemSelectionChanged.connect(self.update_next_button_state)
-        grouped_group.addWidget(self.lst_grouped)
-        main_layout.addLayout(grouped_group)
-
-        metrics_group = QVBoxLayout()
-        metrics_group.addWidget(QLabel("<b>Metrikler :</b>"))
-        self.metrics_scroll_area = QScrollArea()
-        self.metrics_scroll_area.setWidgetResizable(True)
-        self.metrics_content_widget = QWidget()
-        self.metrics_layout = QVBoxLayout(self.metrics_content_widget)
-        self.metrics_scroll_area.setWidget(self.metrics_content_widget)
-        metrics_group.addWidget(self.metrics_scroll_area)
-        main_layout.addLayout(metrics_group)
-
-        nav_layout = QHBoxLayout()
-        self.btn_back = QPushButton("← Geri")
-        self.btn_back.clicked.connect(lambda: self.main_window.goto_page(0))
-        nav_layout.addWidget(self.btn_back)
-
-        self.btn_next = QPushButton("İleri →")
-        self.btn_next.setEnabled(False)
-        self.btn_next.clicked.connect(self.go_next)
-        nav_layout.addStretch(1)
-        nav_layout.addWidget(self.btn_next)
-        main_layout.addLayout(nav_layout)
-
-    def refresh(self) -> None:
-        """Sayfa görüntülendiğinde verileri yeniler."""
-        self.cmb_sheet.clear()
-        if self.main_window.available_sheets:
-            self.cmb_sheet.addItems(self.main_window.available_sheets)
-            self.cmb_sheet.setEnabled(True)
-            if self.main_window.selected_sheet in self.main_window.available_sheets:
-                self.cmb_sheet.setCurrentText(self.main_window.selected_sheet)
-            else:
-                self.cmb_sheet.setCurrentText(self.main_window.available_sheets[0])
-        else:
-            self.cmb_sheet.setEnabled(False)
-            self.main_window.selected_sheet = None
-            QMessageBox.warning(self, "Uyarı", "Seçilen Excel dosyasında uygun sayfa bulunamadı.")
-            self.main_window.goto_page(0)
-            return
-
-    def on_sheet_selected(self) -> None:
-        """Sayfa seçimi değiştiğinde ana penceredeki seçili sayfayı günceller ve verileri yeniden yükler."""
-        self.main_window.selected_sheet = self.cmb_sheet.currentText()
-        self.main_window.load_excel()
-        self._populate_data_selection_fields()
-
     def _populate_data_selection_fields(self):
         """Gruplama, gruplanan ve metrik alanlarını doldurur."""
         df = self.main_window.df
@@ -638,6 +561,101 @@ class DataSelectionPage(QWidget):
             QMessageBox.warning(self, "Seçim Eksik", "Lütfen en az bir gruplanan değişken ve bir metrik seçin.")
             return
         self.main_window.goto_page(2)
+
+    def init_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setAlignment(Qt.AlignTop)
+
+        title_label = QLabel("<h2>Günlük Grafik Veri Seçimi</h2>")
+        title_label.setObjectName("title_label")
+        title_label.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(title_label)
+
+        sheet_selection_group = QHBoxLayout()
+        self.sheet_selection_label = QLabel("İşlenecek Sayfa:")
+        self.sheet_selection_label.setAlignment(Qt.AlignLeft)
+        sheet_selection_group.addWidget(self.sheet_selection_label)
+
+        self.cmb_sheet = QComboBox()
+        self.cmb_sheet.setEnabled(False)
+        self.cmb_sheet.currentIndexChanged.connect(self.on_sheet_selected)
+        sheet_selection_group.addWidget(self.cmb_sheet)
+        main_layout.addLayout(sheet_selection_group)
+
+        grouping_group = QHBoxLayout()
+        grouping_group.addWidget(QLabel("<b>Gruplama Değişkeni (Tarihler):</b>"))
+        self.cmb_grouping = QComboBox()
+        self.cmb_grouping.currentIndexChanged.connect(self.populate_grouped)
+        grouping_group.addWidget(self.cmb_grouping)
+        main_layout.addLayout(grouping_group)
+
+        grouped_group = QHBoxLayout()
+        grouped_group.addWidget(QLabel("<b>Gruplanan Değişkenler (Ürünler):</b>"))
+        self.lst_grouped = QListWidget()
+        self.lst_grouped.setSelectionMode(QListWidget.MultiSelection)
+        self.lst_grouped.itemSelectionChanged.connect(self.update_next_button_state)
+        grouped_group.addWidget(self.lst_grouped)
+        main_layout.addLayout(grouped_group)
+
+        metrics_group = QVBoxLayout()
+        metrics_group.addWidget(QLabel("<b>Metrikler :</b>"))
+        self.metrics_scroll_area = QScrollArea()
+        self.metrics_scroll_area.setWidgetResizable(True)
+        self.metrics_content_widget = QWidget()
+        self.metrics_layout = QVBoxLayout(self.metrics_content_widget)
+        self.metrics_scroll_area.setWidget(self.metrics_content_widget)
+        metrics_group.addWidget(self.metrics_scroll_area)
+        main_layout.addLayout(metrics_group)
+
+        nav_layout = QHBoxLayout()
+        self.btn_back = QPushButton("← Geri")
+        self.btn_back.clicked.connect(lambda: self.main_window.goto_page(0))
+        nav_layout.addWidget(self.btn_back)
+
+        self.btn_next = QPushButton("İleri →")
+        self.btn_next.setEnabled(False)
+        self.btn_next.clicked.connect(self.go_next)
+        nav_layout.addStretch(1)
+        nav_layout.addWidget(self.btn_next)
+        main_layout.addLayout(nav_layout)
+
+    def refresh(self) -> None:
+        """Sayfa görüntülendiğinde verileri yeniler."""
+        self.cmb_sheet.clear()
+        if self.main_window.available_sheets:
+            # Filter out "KAPLAMA-OEE" for daily graphs
+            daily_graph_sheets = [sheet for sheet in self.main_window.available_sheets if sheet != "KAPLAMA-OEE"]
+            if daily_graph_sheets:
+                self.cmb_sheet.addItems(daily_graph_sheets)
+                self.cmb_sheet.setEnabled(True)
+                # Set default selected sheet, preferring SMD-OEE if available and not filtered out
+                if "SMD-OEE" in daily_graph_sheets:
+                    self.cmb_sheet.setCurrentText("SMD-OEE")
+                else:
+                    self.cmb_sheet.setCurrentText(daily_graph_sheets[0])
+            else:
+                self.cmb_sheet.setEnabled(False)
+                self.main_window.selected_sheet = None
+                QMessageBox.warning(self, "Uyarı", "Günlük grafikler için uygun sayfa bulunamadı.")
+                self.main_window.goto_page(0)
+                return
+        else:
+            self.cmb_sheet.setEnabled(False)
+            self.main_window.selected_sheet = None
+            QMessageBox.warning(self, "Uyarı", "Seçilen Excel dosyasında uygun sayfa bulunamadı.")
+            self.main_window.goto_page(0)
+            return
+
+        # Ensure main_window.selected_sheet is updated based on cmb_sheet's current text
+        self.main_window.selected_sheet = self.cmb_sheet.currentText()
+        self.main_window.load_excel()
+        self._populate_data_selection_fields()
+
+    def on_sheet_selected(self) -> None:
+        """Sayfa seçimi değiştiğinde ana penceredeki seçili sayfayı günceller ve verileri yeniden yükler."""
+        self.main_window.selected_sheet = self.cmb_sheet.currentText()
+        self.main_window.load_excel()
+        self._populate_data_selection_fields()
 
 
 class DailyGraphsPage(QWidget):
@@ -1500,8 +1518,9 @@ class MonthlyGraphsPage(QWidget):
                 # Yarı değer çizgisinin bitiş noktasına ortalama değeri yaz
                 if not half_oee_values.empty and len(x_indices) > 0:
                     last_x_index = x_indices[-1]
-                    last_y_value = half_oee_values.iloc[-1]
-                    ax.annotate(f'{average_half_oee * 100:.1f}%', (last_x_index, last_y_value),
+                    # Calculate the position for the text relative to the last point of the line
+                    # Adjust xytext for better placement (e.g., slightly to the right and centered vertically)
+                    ax.annotate(f'{average_half_oee * 100:.1f}%', (last_x_index, half_oee_values.iloc[-1]),
                                 textcoords="offset points", xytext=(5, -5), ha='left', va='center',
                                 fontsize=9, fontweight='bold', color='#ADD8E6')
 
@@ -1573,11 +1592,16 @@ class MonthlyGraphsPage(QWidget):
 
             # Grafik başlığı dinamik olarak ayarlandı
             if self.current_graph_mode == "page":
-                chart_title = f"{month_name} {name} OEE"  # name burada sayfa adıdır
+                # Replace hyphens with spaces for page graph titles
+                cleaned_name = name.replace('_', ' ').replace('-', ' ')  # Also replace underscores
+                # Handle "KAPLAMA OEE OEE" case
+                if cleaned_name.endswith("OEE"):
+                    cleaned_name = cleaned_name.rsplit(' ', 1)[0]  # Remove the last "OEE"
+                chart_title = f"{month_name} {cleaned_name} OEE"
             else:  # hat mode
-                chart_title = f"{name} {month_name} OEE"  # name burada hat adıdır
+                chart_title = f"{name} {month_name} OEE"
 
-            ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
+            ax.set_title(chart_title, fontsize=24, color='#2c3e50', fontweight='bold')  # Font size increased
 
             ax.legend(loc='upper left', bbox_to_anchor=(1.02, 0), fontsize=10)
             fig.subplots_adjust(right=0.60)
@@ -1590,6 +1614,7 @@ class MonthlyGraphsPage(QWidget):
 
             total_sum = sum(values)
 
+            # Provided func code block
             def func(pct, allvals):
                 absolute = int(np.round(pct / 100. * total_sum))
                 hours = absolute // 3600
@@ -1620,7 +1645,7 @@ class MonthlyGraphsPage(QWidget):
                       title_fontsize=12)
 
             chart_title = f"Dizgi Onay Dağılımı"
-            ax.set_title(chart_title, fontsize=16, color='#2c3e50', fontweight='bold')
+            ax.set_title(chart_title, fontsize=24, color='#2c3e50', fontweight='bold')  # Font size increased
             fig.tight_layout()
 
         elif self.cmb_monthly_graph_type.currentText() == "Dizgi Duruş Grafiği":
@@ -1716,7 +1741,7 @@ class MonthlyGraphsPage(QWidget):
                         chart_title = f"{min_date.year}-{max_date.year} Yılları Dizgi Duruşları"
 
             # Başlık rengini görseldeki gibi koyu gri yap
-            ax.set_title(chart_title, fontsize=20, color='#363636', fontweight='bold')  # Başlık boyutu arttırıldı
+            ax.set_title(chart_title, fontsize=24, color='#363636', fontweight='bold')  # Font size increased
 
             ax.set_ylim(bottom=0)
             ax2.set_ylim(0, 100)
